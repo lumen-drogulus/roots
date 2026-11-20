@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roots tree prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap">
+<style>
+/* Roots, Forest and gilt. One visual world (paper), single theme by choice.
+   Layout idea: the person in the middle stands on a ground line; ancestors grow below as gold roots,
+   descendants above as ink branches; far branches fold into buds. */
+:root {
+  --paper: #EEEBE3;
+  --card: #F8F6F1;
+  --ink: #1D2B24;
+  --ink-soft: #55625B;
+  --line: rgba(29, 43, 36, .14);
+  --gilt: #A9822F;
+  --gilt-light: #C9A35A;
+  --forest: #17241E;
+  --forest-raised: #23362C;
+  --bone: #E8E2D2;
+  --font-ui: "Jost", "Futura", "Avenir Next", system-ui, sans-serif;
+  --font-story: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--font-ui); font-size: 15px; overflow: hidden; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }
+
+/* ---------- top bar ---------- */
+.topbar { position: fixed; inset: 0 0 auto 0; height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 16px; z-index: 20;
+  background: linear-gradient(var(--paper) 70%, rgba(238, 235, 227, 0)); }
+.topbar .logo { height: 34px; width: auto; display: block; }
+.topbar .spacer { flex: 1; }
+.iconbtn { height: 40px; min-width: 40px; padding: 0 12px; border-radius: 20px; border: 1px solid var(--line); background: var(--card); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+.iconbtn:hover { border-color: rgba(29, 43, 36, .3); }
+.iconbtn svg { width: 18px; height: 18px; flex: none; }
+.iconbtn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.primary { height: 40px; padding: 0 16px; border-radius: 20px; border: 0; background: var(--ink); color: var(--paper); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; font-size: 14px; }
+.primary:hover { background: #2c4036; }
+.primary svg { width: 18px; height: 18px; }
+@media (max-width: 640px) {
+  .topbar { gap: 8px; padding: 0 10px; }
+  .topbar .logo { height: 28px; }
+  .iconbtn .lbl, .primary .lbl-long { display: none; }
+  .iconbtn { padding: 0; width: 40px; justify-content: center; }
+}
+
+/* ---------- stage ---------- */
+#stage { position: fixed; inset: 0; touch-action: none; cursor: grab; }
+#stage.dragging { cursor: grabbing; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+#edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.edge { fill: none; stroke-linecap: round; }
+.edge.branch { stroke: var(--ink); }
+.edge.root { stroke: var(--gilt); }
+.edge.dashed { stroke-dasharray: none; }
+.edge.partner { stroke: var(--ink); stroke-width: 1.6; }
+.edge.partner.former { opacity: .45; }
+.edge.stem { stroke: var(--ink-soft); stroke-width: 1.4; opacity: .7; }
+.ground { stroke: var(--ink); stroke-opacity: .16; stroke-width: 1.2; }
+.ring { fill: none; stroke: var(--ink); stroke-opacity: .045; }
+
+.node { position: absolute; left: 0; top: 0; will-change: transform, opacity; }
+.card { position: absolute; transform: translate(-50%, -50%); width: 180px; height: 70px; padding: 8px 12px 8px 10px; border-radius: 14px; border: 1px solid var(--line);
+  background: var(--card); display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+  box-shadow: 0 1px 0 rgba(29, 43, 36, .04); transition: transform .25s var(--ease), box-shadow .25s var(--ease), border-color .25s; }
+.card:hover { border-color: rgba(29, 43, 36, .32); }
+.card.selected { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 10px 28px rgba(23, 36, 30, .18); border-color: var(--ink); z-index: 2; }
+.card .av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 500; background: #E2DDD0; color: var(--ink); }
+.card .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.card .nm { font-weight: 500; font-size: 14px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .yr { font-size: 11.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.card .rl { font-size: 12px; color: var(--ink-soft); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.deceased .av { background: #E9E1CC; color: #6E5A2A; }
+.card.focus { width: 210px; height: 82px; border: 2px solid var(--gilt); background: #FFFDF8; box-shadow: 0 8px 24px rgba(169, 130, 47, .18); }
+.card.focus .av { width: 42px; height: 42px; font-size: 15px; background: var(--ink); color: var(--paper); }
+.card.focus .nm { font-size: 16px; }
+.card.placeholder { border: 1.5px dashed rgba(29, 43, 36, .35); background: transparent; }
+.card.placeholder .av { background: transparent; border: 1.5px dashed rgba(29, 43, 36, .35); }
+.card.pending { border: 1.5px dashed var(--gilt); background: #FBF7EC; }
+.card .tag { position: absolute; top: -9px; right: 10px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; padding: 1px 7px; border-radius: 8px; background: var(--gilt); color: #fff; font-weight: 500; }
+.card .twice { position: absolute; bottom: -9px; right: 10px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--card); border: 1px solid var(--line); display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--ink-soft); }
+.card .twice svg { width: 16px; height: 10px; }
+
+.bud { position: absolute; transform: translate(-50%, -50%); height: 30px; padding: 0 12px 0 8px; border-radius: 15px; border: 1px solid rgba(169, 130, 47, .55); background: #FBF6E9;
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; cursor: pointer; color: var(--ink); transition: background .2s, transform .2s var(--ease); }
+.bud:hover { background: #F5EBD2; transform: translate(-50%, -50%) scale(1.04); }
+.bud svg { width: 16px; height: 16px; color: var(--gilt); }
+.bud.open { border-color: var(--line); background: var(--card); color: var(--ink-soft); }
+.fold { position: absolute; width: 24px; height: 24px; border-radius: 12px; border: 1px solid rgba(169, 130, 47, .6); background: #FBF6E9; display: grid; place-items: center; cursor: pointer; padding: 0; color: var(--gilt); }
+.fold svg { width: 14px; height: 14px; }
+.fold:hover { background: #F5EBD2; }
+.bud .n { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+
+/* ---------- floating controls ---------- */
+.zoomctl { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 15; }
+.builtby { position: fixed; left: 16px; bottom: 14px; z-index: 15; font-size: 12px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
+.builtby svg { width: 22px; height: 14px; }
+.builtby button { border: 0; background: none; padding: 4px 6px; border-radius: 8px; cursor: pointer; font-size: 12px; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(29, 43, 36, .25); }
+.sample { position: fixed; left: 18px; top: 58px; z-index: 14; font-size: 11.5px; color: var(--ink-soft); letter-spacing: .02em; }
+
+/* ---------- pop-out panel ---------- */
+.scrim { position: fixed; inset: 0; background: rgba(23, 36, 30, .18); opacity: 0; pointer-events: none; transition: opacity .3s var(--ease); z-index: 30; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+.panel { position: fixed; z-index: 31; background: #FBFAF6; box-shadow: 0 24px 60px rgba(23, 36, 30, .22); display: flex; flex-direction: column; overflow: hidden;
+  top: 76px; right: 16px; bottom: 16px; width: 380px; border-radius: 22px; transform: translateX(24px) scale(.97); opacity: 0; pointer-events: none;
+  transition: transform .34s var(--ease), opacity .24s var(--ease); }
+.panel.on { transform: none; opacity: 1; pointer-events: auto; }
+@media (max-width: 700px) {
+  .panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 82vh; transform: translateY(40px); }
+  .panel.on { transform: none; }
+}
+.panel .head { padding: 20px 20px 14px; display: flex; gap: 14px; align-items: center; border-bottom: 1px solid var(--line); }
+.panel .head .av { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; font-weight: 500; background: #E2DDD0; flex: none; }
+.panel h2 { margin: 0; font-weight: 500; font-size: 21px; line-height: 1.2; text-wrap: balance; }
+.panel .sub { color: var(--ink-soft); font-size: 13.5px; margin-top: 3px; }
+.panel .x { margin-left: auto; align-self: flex-start; width: 36px; height: 36px; border-radius: 18px; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
+.panel .x:hover { background: rgba(29, 43, 36, .07); }
+.panel .x svg { width: 18px; height: 18px; }
+.panel .body { padding: 16px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+.panel .foot { padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; flex-wrap: wrap; }
+.panel .foot .primary, .panel .foot .iconbtn { flex: 1 1 auto; justify-content: center; }
+.facts { display: grid; grid-template-columns: 76px 1fr; gap: 8px 12px; margin: 0; font-size: 14px; }
+.facts dt { color: var(--ink-soft); }
+.facts dd { margin: 0; }
+.story { font-family: var(--font-story); font-size: 16.5px; line-height: 1.5; margin: 0; }
+.private { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: #F1EEE6; font-size: 13.5px; color: var(--ink-soft); line-height: 1.45; }
+.private svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.photo { aspect-ratio: 1; border-radius: 10px; background: linear-gradient(160deg, #D9CFB8, #B9A981); position: relative; overflow: hidden; }
+.photo::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 0; height: 52%; border-radius: 50% 50% 0 0; background: rgba(60, 48, 25, .28); }
+.photo::before { content: ""; position: absolute; left: 38%; width: 24%; top: 22%; aspect-ratio: 1; border-radius: 50%; background: rgba(60, 48, 25, .28); }
+.photo.add { background: transparent; border: 1.5px dashed rgba(29, 43, 36, .25); display: grid; place-items: center; color: var(--ink-soft); font-size: 12.5px; cursor: pointer; }
+.photo.add::before, .photo.add::after { display: none; }
+.prov { font-size: 12.5px; color: var(--ink-soft); }
+.label { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 8px; }
+.twicebox { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); font-size: 13.5px; }
+.twicebox svg { width: 28px; height: 18px; flex: none; }
+
+/* forms */
+.form { display: flex; flex-direction: column; gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label, .field .lab { font-size: 13px; color: var(--ink-soft); }
+.field input, .field textarea, .field select { font: inherit; font-size: 15px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(29, 43, 36, .2); background: #fff; color: var(--ink); width: 100%; }
+.field textarea { min-height: 84px; resize: vertical; font-family: var(--font-story); font-size: 16px; line-height: 1.45; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { padding: 8px 14px; border-radius: 18px; border: 1px solid rgba(29, 43, 36, .2); background: #fff; cursor: pointer; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.hint { font-size: 12.5px; color: var(--ink-soft); line-height: 1.4; }
+
+/* ---------- full-screen pages ---------- */
+.page { position: fixed; inset: 0; z-index: 50; background: var(--paper); display: grid; place-items: center; padding: 24px 16px; overflow-y: auto;
+  opacity: 0; pointer-events: none; transition: opacity .35s var(--ease); }
+.page.on { opacity: 1; pointer-events: auto; }
+.page .inner { width: min(560px, 100%); display: flex; flex-direction: column; gap: 18px; transform: translateY(14px); transition: transform .45s var(--ease); }
+.page.on .inner { transform: none; }
+.page h1 { font-weight: 500; font-size: clamp(26px, 5vw, 34px); line-height: 1.15; margin: 0; text-wrap: balance; }
+.page p { margin: 0; line-height: 1.55; }
+.page .lede { font-family: var(--font-story); font-size: 19px; line-height: 1.55; }
+.page .placeholder-copy { border-left: 2px solid var(--gilt); padding: 4px 0 4px 14px; color: var(--ink-soft); font-family: var(--font-story); font-size: 17px; font-style: italic; }
+.page .sig { font-family: var(--font-story); font-size: 18px; }
+.page .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.page .linkbtn { border: 0; background: none; color: var(--ink-soft); cursor: pointer; padding: 8px; text-decoration: underline; text-underline-offset: 3px; }
+.dots { display: flex; gap: 6px; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(29, 43, 36, .18); }
+.dots i.on { background: var(--ink); }
+.howto { display: flex; flex-direction: column; gap: 14px; margin: 4px 0; padding: 0; list-style: none; }
+.howto li { display: flex; gap: 14px; align-items: flex-start; }
+.howto .ic { width: 40px; height: 40px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); display: grid; place-items: center; flex: none; }
+.howto .ic svg { width: 22px; height: 22px; }
+.howto b { font-weight: 500; display: block; }
+.howto span { color: var(--ink-soft); font-size: 14px; line-height: 1.45; }
+.pick { display: flex; flex-direction: column; gap: 6px; max-height: 230px; overflow-y: auto; }
+.pick button { display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); cursor: pointer; text-align: left; }
+.pick button:hover { border-color: rgba(29, 43, 36, .35); }
+.pick small { color: var(--ink-soft); }
+.sprout { width: 140px; height: 140px; align-self: center; }
+.sprout .grow { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.page.on .grow { animation: draw 1.1s var(--ease) both; }
+.page.on .grow.d2 { animation-delay: .55s; }
+.page.on .grow.d3 { animation-delay: .85s; }
+.leafin { transform-box: fill-box; transform-origin: 50% 100%; }
+.page.on .leafin { animation: leafin .6s var(--ease) 1.1s both; }
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes leafin { from { transform: scale(0); opacity: 0; } to { transform: none; opacity: 1; } }
+.sendbox { display: flex; flex-direction: column; gap: 10px; }
+.linkrow { display: flex; gap: 8px; }
+.linkrow input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(29, 43, 36, .2); background: #fff; color: var(--ink-soft); }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 12px; font-size: 14px; opacity: 0; transition: all .3s var(--ease); z-index: 80; pointer-events: none; }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* prototype-only options */
+.mock { position: fixed; left: 16px; bottom: 44px; z-index: 16; }
+.mock > button { font-size: 12px; height: 28px; padding: 0 10px; border-radius: 14px; border: 1px dashed rgba(29, 43, 36, .3); background: transparent; color: var(--ink-soft); cursor: pointer; }
+.mock .menu { position: absolute; left: 0; bottom: 36px; width: 270px; background: #FBFAF6; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 30px rgba(23, 36, 30, .16); padding: 12px; display: none; flex-direction: column; gap: 10px; font-size: 13.5px; }
+.mock .menu.on { display: flex; }
+.mock label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.mock .menu button { text-align: left; border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 10px; cursor: pointer; font-size: 13.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-delay: 0s !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <svg class="logo" viewBox="4 8 216 112" role="img" aria-label="Roots">
+    <path d="M14 32 V82" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round"/>
+    <path d="M14 50 C14 38 24 32 40 32" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round"/>
+    <defs>
+      <mask id="lgA" maskUnits="userSpaceOnUse" x="33.5" y="20.5" width="109" height="73"><rect x="33.5" y="20.5" width="109" height="73" fill="#fff"/><path d="M83.50 57.00 A22.5 22.5 0 0 1 106.00 34.50" fill="none" stroke="#000" stroke-width="9.8"/></mask>
+      <mask id="lgB" maskUnits="userSpaceOnUse" x="33.5" y="20.5" width="109" height="73"><rect x="33.5" y="20.5" width="109" height="73" fill="#fff"/><path d="M92.50 57.00 A22.5 22.5 0 0 1 70.00 79.50" fill="none" stroke="#000" stroke-width="9.8"/></mask>
+    </defs>
+    <circle cx="70" cy="57" r="22.5" fill="none" stroke="#1D2B24" stroke-width="7" mask="url(#lgA)"/>
+    <circle cx="106" cy="57" r="22.5" fill="none" stroke="#1D2B24" stroke-width="7" mask="url(#lgB)"/>
+    <path d="M153 84 C153 96 150 104 142 112" fill="none" stroke="#A9822F" stroke-width="4.2" stroke-linecap="round"/>
+    <path d="M152 94 C155 100 161 103 168 104" fill="none" stroke="#A9822F" stroke-width="3.15" stroke-linecap="round"/>
+    <path d="M153 18 V82" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round"/>
+    <path d="M142 34 H164" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round"/>
+    <path d="M210 39.7 C206 33.9 201 32 194 32 C184 32 178 36.8 178 44.5 C178 52.2 185 55.1 194 57 C203 58.9 210 61.8 210 69.5 C210 77.2 203 82 194 82 C187 82 181 79.1 178 74.3" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round"/>
+  </svg>
+  <span class="spacer"></span>
+  <button class="iconbtn" id="btnSearch" aria-label="Find a person"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><span class="lbl">Find</span></button>
+  <button class="iconbtn" id="btnAll" aria-pressed="false" aria-label="Show all branches"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 21V9"/><path d="M12 13c-3 0-5-2-6-5"/><path d="M12 11c3 0 5-2 6-5"/><path d="M12 9c0-2 0-4 0-6"/></svg><span class="lbl">Show all</span></button>
+  <button class="iconbtn" id="btnHelp" aria-label="How Roots works"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.6v.4"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg><span class="lbl">Guide</span></button>
+  <button class="primary" id="btnSend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg><span>Send<span class="lbl-long"> to family</span></span></button>
+</header>
+
+<div class="sample">Sample family for the prototype</div>
+
+<main id="stage" aria-label="Family tree">
+  <div id="world">
+    <svg id="edges" aria-hidden="true">
+      <defs>
+        <pattern id="soil" width="14" height="14" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r=".9" fill="#1D2B24" fill-opacity=".09"/><circle cx="10" cy="10" r=".7" fill="#A9822F" fill-opacity=".14"/></pattern>
+        <linearGradient id="soilfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+        <mask id="soilmask"><rect x="-6000" y="0" width="12000" height="900" fill="url(#soilfade)"/></mask>
+      </defs>
+      <g id="rings"></g>
+      <g id="groundg"></g>
+      <g id="edgeg"></g>
+    </svg>
+    <div id="nodes"></div>
+  </div>
+</main>
+
+<div class="zoomctl">
+  <button class="iconbtn" id="btnHome" aria-label="Back to you"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></button>
+  <button class="iconbtn" id="btnZoomIn" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></button>
+  <button class="iconbtn" id="btnZoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
+</div>
+
+<div class="mock">
+  <div class="menu" id="mockMenu">
+    <b>Prototype options</b>
+    <label><input type="checkbox" id="optRoots" checked> Ancestors as roots, below the ground line</label>
+    <button id="optIntro">Replay the first-visit intro</button>
+    <button id="optReset">Reset the sample tree</button>
+  </div>
+  <button id="btnMock" aria-expanded="false">Prototype options</button>
+</div>
+
+<div class="builtby">
+  <svg viewBox="40 30 100 54" aria-hidden="true"><circle cx="70" cy="57" r="22.5" fill="none" stroke="#55625B" stroke-width="7" mask="url(#lgA)"/><circle cx="106" cy="57" r="22.5" fill="none" stroke="#55625B" stroke-width="7" mask="url(#lgB)"/></svg>
+  <span>Built by Jonny</span>
+  <button id="btnWhy">Why I built this</button>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="panel" id="panel" aria-live="polite" aria-label="Person details"></aside>
+
+<!-- first visit intro -->
+<section class="page" id="intro" aria-label="Welcome to Roots">
+  <div class="inner" id="introInner"></div>
+</section>
+
+<!-- thank you -->
+<section class="page" id="thanks" aria-label="Thank you">
+  <div class="inner" style="text-align:center; align-items:center">
+    <svg class="sprout" viewBox="0 0 140 140" aria-hidden="true">
+      <path class="grow" pathLength="1" d="M20 108 H120" stroke="#1D2B24" stroke-opacity=".25" stroke-width="2" stroke-dasharray="1 1"/>
+      <path class="grow d2" pathLength="1" d="M70 108 V62" stroke="#1D2B24" stroke-width="4" stroke-dasharray="1 1"/>
+      <path class="grow d2" pathLength="1" d="M70 110 C70 120 64 126 56 130" stroke="#A9822F" stroke-width="3" stroke-dasharray="1 1"/>
+      <path class="grow d3" pathLength="1" d="M70 116 C73 122 79 125 86 126" stroke="#A9822F" stroke-width="2.4" stroke-dasharray="1 1"/>
+      <g class="leafin"><path d="M70 74 C60 74 51 67 48 55 C60 54 69 61 70 74 Z" fill="#A9822F"/><path d="M70 66 C78 64 87 56 91 45 C79 44 71 52 70 66 Z" fill="#A9822F"/></g>
+    </svg>
+    <h1 id="thanksTitle">Thank you. It's planted.</h1>
+    <p class="lede" id="thanksBody">Jonny looks over every addition before everyone else sees it. Until then it's on your tree, marked unconfirmed.</p>
+    <div class="actions" style="justify-content:center">
+      <button class="primary" id="thanksBack">Back to the tree</button>
+      <button class="iconbtn" id="thanksSend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg><span class="lbl">Send to a family member</span></button>
+    </div>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* =====================================================================
+ * Sample family (fictional). Shape matches the real API's public tree.
+ * ===================================================================== */
+const SAMPLE = {
+  viewer: 'daniel',
+  people: [
+    { id: 'daniel', first: 'Daniel', last: 'Marlow', living: true, sex: 'male', addedBy: 'Daniel Marlow' },
+    { id: 'elena', first: 'Elena', last: 'Marlow', living: true, sex: 'female' },
+    { id: 'tara', first: 'Tara', last: 'Quinn', living: true, sex: 'female' },
+    { id: 'leo', first: 'Leo', last: 'Marlow', living: true, sex: 'male' },
+    { id: 'mia', first: 'Mia', last: 'Marlow', living: true, sex: 'female' },
+    { id: 'noah', first: 'Noah', last: 'Marlow', living: true, sex: 'male' },
+    { id: 'priya', first: 'Priya', last: 'Shah', living: true, sex: 'female' },
+    { id: 'ada', first: 'Ada', last: 'Marlow', living: true, sex: 'female' },
+    { id: 'rose', first: 'Rose', last: 'Marlow', living: true, sex: 'female', pending: true },
+    { id: 'robert', first: 'Robert', middle: 'James', last: 'Marlow', born: '1941', died: '2015', bornPlace: 'Cleveland, Ohio', sex: 'male', photos: 3,
+      notes: 'Ran a hardware store on Lorain Avenue for thirty years. Knew every customer by the screws they bought.', source: 'family Bible', addedBy: 'Daniel Marlow' },
+    { id: 'joan', first: 'Joan', last: 'Marlow', birth: 'Whitlock', born: '1944', died: '2020', bornPlace: 'Akron, Ohio', sex: 'female', photos: 2,
+      notes: 'Taught third grade for 31 years. Made everyone write thank-you notes, including the dog.', addedBy: 'Daniel Marlow' },
+    { id: 'kate', first: 'Kate', last: 'Dunn', birth: 'Marlow', living: true, sex: 'female' },
+    { id: 'chris', first: 'Chris', last: 'Marlow', living: true, sex: 'male' },
+    { id: 'linda', first: 'Linda', last: 'Pryce', living: true, sex: 'female' },
+    { id: 'walter', first: 'Walter', last: 'Marlow', born: '1912', died: '1988', sex: 'male', notes: 'Machinist. Served in the Pacific, 1943 to 1945.', photos: 1 },
+    { id: 'unk1', placeholder: true },
+    { id: 'vera', first: 'Vera', last: 'Marlow', born: '1938', died: '2019', sex: 'female' },
+    { id: 'josef', first: 'Josef', last: 'Marlek', born: '1880', died: '1951', bornPlace: 'Brno, Moravia', sex: 'male', notes: 'Came through Ellis Island in 1907. The name became Marlow at the factory gate.', source: 'ship manifest' },
+    { id: 'anna', first: 'Anna', last: 'Marlek', born: 'about 1885', sex: 'female' },
+    { id: 'harold', first: 'Harold', last: 'Whitlock', born: '1915', died: '1990', sex: 'male' },
+    { id: 'mabel', first: 'Mabel', last: 'Whitlock', birth: 'Price', born: '1918', died: '2001', sex: 'female', photos: 2 },
+    { id: 'george', first: 'George', last: 'Whitlock', born: '1888', died: '1960', sex: 'male' },
+    { id: 'clara', first: 'Clara', last: 'Whitlock', birth: 'Hale', born: '1891', died: '1972', sex: 'female' },
+    { id: 'william', first: 'William', last: 'Whitlock', born: '1860', died: '1931', sex: 'male' },
+    { id: 'thomas', first: 'Thomas', last: 'Price', born: '1890', died: '1955', sex: 'male' },
+    { id: 'ida', first: 'Ida', last: 'Price', born: '1893', died: '1980', sex: 'female' },
+    { id: 'edith', first: 'Edith', last: 'Dunn', birth: 'Whitlock', born: '1920', died: '1999', sex: 'female' },
+    { id: 'paul', first: 'Paul', last: 'Dunn', born: '1946', died: '2011', sex: 'male' },
+    { id: 'owen', first: 'Owen', last: 'Dunn', living: true, sex: 'male' },
+    { id: 'lily', first: 'Lily', last: 'Dunn', living: true, sex: 'female' },
+    { id: 'luis', first: 'Luis', last: 'Reyes', living: true, sex: 'male' },
+    { id: 'carmen', first: 'Carmen', last: 'Reyes', living: true, sex: 'female' },
+    { id: 'marco', first: 'Marco', last: 'Reyes', living: true, sex: 'male' },
+    { id: 'raj', first: 'Raj', last: 'Shah', living: true, sex: 'male' },
+    { id: 'meera', first: 'Meera', last: 'Shah', living: true, sex: 'female' }
+  ],
+  rels: [
+    ['partner', 'daniel', 'elena', 'married'], ['partner', 'daniel', 'tara', 'divorced'], ['partner', 'leo', 'priya', 'partner'],
+    ['partner', 'robert', 'joan', 'divorced'], ['partner', 'robert', 'linda', 'married'], ['partner', 'walter', 'unk1', 'married'],
+    ['partner', 'josef', 'anna', 'married'], ['partner', 'harold', 'mabel', 'married'], ['partner', 'george', 'clara', 'married'],
+    ['partner', 'thomas', 'ida', 'married'], ['partner', 'kate', 'owen', 'married'], ['partner', 'luis', 'carmen', 'married'], ['partner', 'raj', 'meera', 'married'],
+    ['pc', 'daniel', 'leo'], ['pc', 'tara', 'leo'], ['pc', 'daniel', 'mia'], ['pc', 'elena', 'mia'], ['pc', 'daniel', 'noah', 'adopted'], ['pc', 'elena', 'noah', 'adopted'],
+    ['pc', 'leo', 'ada'], ['pc', 'priya', 'ada'], ['pc', 'mia', 'rose', 'biological', true],
+    ['pc', 'robert', 'daniel'], ['pc', 'joan', 'daniel'], ['pc', 'robert', 'kate'], ['pc', 'joan', 'kate'], ['pc', 'robert', 'chris'], ['pc', 'linda', 'chris'],
+    ['pc', 'walter', 'robert'], ['pc', 'unk1', 'robert'], ['pc', 'walter', 'vera'], ['pc', 'unk1', 'vera'], ['pc', 'josef', 'walter'], ['pc', 'anna', 'walter'],
+    ['pc', 'harold', 'joan'], ['pc', 'mabel', 'joan'], ['pc', 'george', 'harold'], ['pc', 'clara', 'harold'], ['pc', 'george', 'edith'], ['pc', 'clara', 'edith'],
+    ['pc', 'william', 'george'], ['pc', 'thomas', 'mabel'], ['pc', 'ida', 'mabel'], ['pc', 'edith', 'paul'], ['pc', 'paul', 'owen'],
+    ['pc', 'kate', 'lily'], ['pc', 'owen', 'lily'], ['pc', 'luis', 'elena'], ['pc', 'carmen', 'elena'], ['pc', 'luis', 'marco'], ['pc', 'carmen', 'marco'],
+    ['pc', 'raj', 'priya'], ['pc', 'meera', 'priya']
+  ]
+};
+
+/* =====================================================================
+ * Graph
+ * ===================================================================== */
+let G;
+function buildGraph(data) {
+  const g = { people: new Map(), parents: new Map(), children: new Map(), partners: new Map(), pcSub: new Map(), pending: new Set() };
+  data.people.forEach(p => { g.people.set(p.id, { ...p }); g.parents.set(p.id, []); g.children.set(p.id, []); g.partners.set(p.id, []); });
+  data.rels.forEach(([t, a, b, sub, pend]) => {
+    if (t === 'partner') { g.partners.get(a).push({ id: b, sub }); g.partners.get(b).push({ id: a, sub }); }
+    else { g.parents.get(b).push(a); g.children.get(a).push(b); g.pcSub.set(a + '>' + b, sub || 'biological'); if (pend) g.pending.add(a + '>' + b); }
+  });
+  return g;
+}
+const P = id => G.people.get(id);
+const parentsOf = id => G.parents.get(id) || [];
+const childrenOf = id => G.children.get(id) || [];
+const partnersOf = id => G.partners.get(id) || [];
+function siblingsOf(id) {
+  const mine = parentsOf(id), out = new Map();
+  mine.forEach(par => childrenOf(par).forEach(c => { if (c !== id) out.set(c, (out.get(c) || 0) + 1); }));
+  return [...out].map(([sid, shared]) => ({ id: sid, half: shared < mine.length || parentsOf(sid).length !== shared }));
+}
+const isLiving = p => !!p.living || (!p.died && !p.placeholder && !(p.born && +String(p.born).replace(/\D/g, '') < new Date().getFullYear() - 110));
+function displayName(p) { return p.placeholder ? 'Unknown' : [p.first, p.last].filter(Boolean).join(' '); }
+function initials(p) { return p.placeholder ? '?' : ((p.first || '')[0] || '') + ((p.last || '')[0] || ''); }
+function years(p) { if (isLiving(p) || p.placeholder) return ''; const b = p.born ? String(p.born).replace('about ', 'c. ') : '?'; return b + '–' + (p.died || '?'); }
+
+/* Relationship to the viewer, from the shortest path through parent (U), child (D) and partner (P) steps.
+   Sex-specific words only for people who have died: living people's sex isn't public. */
+function relation(id) {
+  const v = STATE.viewer;
+  if (id === v) return 'You';
+  const prev = new Map([[v, null]]), q = [v];
+  while (q.length) {
+    const cur = q.shift();
+    if (cur === id) break;
+    const steps = [...parentsOf(cur).map(x => [x, 'U']), ...childrenOf(cur).map(x => [x, 'D']), ...partnersOf(cur).map(x => [x.id, 'P'])];
+    for (const [nx, s] of steps) if (!prev.has(nx)) { prev.set(nx, [cur, s]); q.push(nx); }
+  }
+  if (!prev.has(id)) return '';
+  let path = '', chain = [], cur = id;
+  while (prev.get(cur)) { const [from, s] = prev.get(cur); path = s + path; chain.unshift(cur); cur = from; }
+  const p = P(id), w = (m, f, n) => (!isLiving(p) && p.sex === 'male') ? m : (!isLiving(p) && p.sex === 'female') ? f : n;
+  const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+  const greatX = (n, word) => cap('great-'.repeat(n) + word);
+  if (/^U+$/.test(path)) { const n = path.length; return n === 1 ? w('Father', 'Mother', 'Parent') : greatX(n - 2, w('grandfather', 'grandmother', 'grandparent')); }
+  if (/^D+$/.test(path)) { const n = path.length; return n === 1 ? w('Son', 'Daughter', 'Child') : greatX(n - 2, w('grandson', 'granddaughter', 'grandchild')); }
+  if (path === 'P') { const sub = (partnersOf(v).find(x => x.id === id) || {}).sub; return sub === 'divorced' ? 'Former partner' : w('Husband', 'Wife', 'Partner'); }
+  if (path === 'UD') { const s = siblingsOf(v).find(x => x.id === id); return (s && s.half ? 'Half-' : '') + (s && s.half ? w('brother', 'sister', 'sibling') : w('Brother', 'Sister', 'Sibling')); }
+  if (path === 'UUD') return w('Uncle', 'Aunt', "Parent's sibling");
+  if (/^UUU+D$/.test(path)) { const n = path.length - 3; return isLiving(p) || !p.sex ? greatX(n - 1, "grandparent's sibling") : greatX(n, w('uncle', 'aunt', '')); }
+  if (path === 'UDD') return w('Nephew', 'Niece', "Sibling's child");
+  if (path === 'UUDD') return 'Cousin';
+  if (path === 'UUUDDD') return 'Second cousin';
+  if (path === 'UUDDD' || path === 'UUUDD') return 'Cousin once removed';
+  if (path === 'PU') return w('Father-in-law', 'Mother-in-law', 'Parent-in-law');
+  if (path === 'PUD' || path === 'UDP') return w('Brother-in-law', 'Sister-in-law', 'Sibling-in-law');
+  if (path === 'DP') return w('Son-in-law', 'Daughter-in-law', 'Child-in-law');
+  if (path === 'UP') return w('Stepfather', 'Stepmother', 'Step-parent');
+  if (path === 'PD') return w('Stepson', 'Stepdaughter', 'Stepchild');
+  const via = P(chain[chain.length - 2]);
+  const last = path[path.length - 1];
+  const word = last === 'U' ? w('father', 'mother', 'parent') : last === 'D' ? w('son', 'daughter', 'child') : w('husband', 'wife', 'partner');
+  return (via ? (via.first || 'Unknown') + "'s " : '') + word;
+}
+
+/* Someone married into the family who also descends from it: show the "connected twice" mark. */
+function ancestorsSet(id, depth = 8) { const s = new Set(); const go = (x, d) => { if (d > depth) return; parentsOf(x).forEach(p => { s.add(p); go(p, d + 1); }); }; go(id, 0); return s; }
+function connectedTwice(id) {
+  for (const pt of partnersOf(id)) {
+    const mine = ancestorsSet(id), theirs = ancestorsSet(pt.id);
+    for (const a of mine) if (theirs.has(a)) return { partner: pt.id, ancestor: a };
+  }
+  return null;
+}
+
+/* =====================================================================
+ * Layout. Generation g: 0 is the centered person, +1 their parents, -1 their children.
+ * Far branches stay folded into buds unless opened (or "Show all" is on).
+ * ===================================================================== */
+const CW = 180, CH = 70, FW = 210, FH = 82, GAP = 22, CG = 44, ROW = 150, BUDW = 124;
+const MAX_UP = 3, MAX_DOWN = 2;
+const STATE = { viewer: SAMPLE.viewer, focus: SAMPLE.viewer, open: new Set(), all: false, rootsBelow: true, selected: null };
+const isOpen = k => STATE.all || STATE.open.has(k);
+const genY = g => (STATE.rootsBelow ? g : -g) * ROW;
+
+function layout() {
+  const nodes = new Map(), edges = [], rows = new Map();
+  const F = STATE.focus;
+  const wOf = id => id === F ? FW : CW;
+  const addNode = (id, x, g, extra = {}) => { const n = { id, x, y: genY(g), g, kind: 'person', ...extra }; nodes.set(id, n); return n; };
+  const addBud = (key, label, count, x, g, anchor) => { const id = 'bud:' + key; nodes.set(id, { id, key, x, y: genY(g), g, kind: 'bud', label, count, anchor }); edges.push({ id: 'stem:' + key, kind: 'stem', a: anchor, b: id }); };
+  const occupy = (g, x0, x1) => { if (!rows.has(g)) rows.set(g, []); rows.get(g).push([x0, x1]); };
+  const nodeSpan = n => { const w = n.kind === 'bud' ? BUDW : wOf(n.id); return [n.x - w / 2, n.x + w / 2]; };
+
+  const fits = block => block.every(n => { const [a, b] = nodeSpan(n); return !(rows.get(n.g) || []).some(([x0, x1]) => a < x1 + GAP && b > x0 - GAP); });
+  // A bud beside its person if that spot is free; otherwise tucked just off the card, between rows.
+  function placeBud(bud, n, dir, vdir) {
+    if (fits([bud])) return placeBlock([bud], dir);
+    const g = n.g + (vdir * (STATE.rootsBelow ? 1 : -1) > 0 ? 0.5 : -0.5);
+    placeBlock([{ ...bud, x: n.x, y: n.y + vdir * (CH / 2 + 26), g }], dir);
+  }
+  // Place a block (a set of tentative nodes) shifted sideways in `dir` until it clears everything already placed.
+  function placeBlock(block, dir) {
+    let shift = 0;
+    for (let guard = 0; guard < 200; guard++) {
+      let moved = false;
+      for (const n of block) {
+        const [a, b] = nodeSpan(n);
+        for (const [x0, x1] of rows.get(n.g) || []) {
+          if (a + shift < x1 + GAP && b + shift > x0 - GAP) {
+            shift += dir > 0 ? (x1 + GAP) - (a + shift) : -((b + shift) - (x0 - GAP));
+            moved = true;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+    block.forEach(n => { n.x += shift; if (n.kind === 'bud') nodes.set(n.id, n); else nodes.set(n.id, n); const [a, b] = nodeSpan(n); occupy(n.g, a, b); });
+    return shift;
+  }
+
+  /* ---- ancestors: a pedigree that grows away from the centered person ---- */
+  function pedExtents(id, depth, side) {
+    const t = { id, depth, side, parents: [], extras: [], bud: null };
+    const opened = depth < MAX_UP || isOpen('up:' + id);
+    const pars = parentsOf(id);
+    if (pars.length && opened) {
+      const ordered = [...pars].sort((a, b) => (P(a).sex === 'female') - (P(b).sex === 'female'));
+      t.parents = ordered.map((pid, i) => pedExtents(pid, depth + 1, ordered.length === 2 ? (i === 0 ? 'left' : 'right') : side));
+    } else if (pars.length) t.bud = { key: 'up:' + id, label: 'Earlier generations', count: countAncestors(id) };
+    if (depth > 0) {
+      const sibs = siblingsOf(id).map(s => s.id);
+      const others = partnersOf(id).filter(pt => !childrenOf(id).some(c => parentsOf(c).includes(pt.id) && isOnLine(c))).map(pt => pt.id);
+      const sibExtras = [];
+      if (sibs.length) { if (isOpen('sib:' + id)) sibExtras.push(...sibs.map(s => ({ id: s }))); else sibExtras.push({ bud: { key: 'sib:' + id, label: sibs.length === 1 ? '1 sibling' : sibs.length + ' siblings', count: '' } }); }
+      if (others.length) { if (isOpen('op:' + id)) t.extras.push(...others.map(s => ({ id: s, partnerOf: id }))); else t.extras.push({ bud: { key: 'op:' + id, label: others.length === 1 ? 'Another marriage' : others.length + ' marriages', count: '' } }); }
+      t.extras.push(...sibExtras);
+    }
+    const extraW = t.extras.reduce((s, e) => s + (e.bud ? BUDW : CW) + GAP, 0);
+    const half = (id === F ? FW : CW) / 2;
+    t.selfL = half + (side === 'left' ? extraW : 0);
+    t.selfR = half + (side !== 'left' ? extraW : 0);
+    t.L = t.selfL; t.R = t.selfR;
+    if (t.parents.length === 2) {
+      const [a, b] = t.parents, H = (CW + CG) / 2;
+      t.da = Math.max(H, a.R + GAP / 2); t.db = Math.max(H, b.L + GAP / 2);
+      t.L = Math.max(t.L, t.da + a.L); t.R = Math.max(t.R, t.db + b.R);
+    } else if (t.parents.length === 1) { t.L = Math.max(t.L, t.parents[0].L); t.R = Math.max(t.R, t.parents[0].R); }
+    return t;
+  }
+  const lineSet = new Set([F, ...ancestorsSet(F, 12)]);
+  function isOnLine(c) { return lineSet.has(c); }
+  function countAncestors(id) { return ancestorsSet(id).size; }
+  function pedPlace(t, x, g) {
+    if (g > 0) addNode(t.id, x, g, { side: t.side });
+    let off = (t.id === F ? FW : CW) / 2 + GAP;
+    for (const e of t.extras) {
+      const w = e.bud ? BUDW : CW;
+      if (e.partnerOf) off += CG - GAP;
+      const ex = t.side === 'left' ? x - off - w / 2 : x + off + w / 2;
+      if (e.bud) addBud(e.bud.key, e.bud.label, e.bud.count, ex, g, t.id);
+      else addNode(e.id, ex, g, { extraOf: t.id, partnerOf: e.partnerOf });
+      off += w + GAP;
+    }
+    if (t.bud) addBud(t.bud.key, t.bud.label, t.bud.count, x, g + 1, t.id);
+    if (t.parents.length === 2) { pedPlace(t.parents[0], x - t.da, g + 1); pedPlace(t.parents[1], x + t.db, g + 1); }
+    else if (t.parents.length === 1) pedPlace(t.parents[0], x, g + 1);
+  }
+  const ped = pedExtents(F, 0, 'right');
+  addNode(F, 0, 0, { focus: true });
+  pedPlace(ped, 0, 0);
+  for (const n of nodes.values()) { const [a, b] = nodeSpan(n); occupy(n.g, a, b); }
+
+  /* ---- the centered person's row: former partners left, current partners right ---- */
+  const prts = partnersOf(F).filter(pt => !nodes.has(pt.id));
+  const current = prts.filter(pt => pt.sub !== 'divorced'), former = prts.filter(pt => pt.sub === 'divorced');
+  let rx = FW / 2 + CG, lx = -(FW / 2 + CG);
+  const sideOf = {};
+  current.forEach(pt => { addNode(pt.id, rx + CW / 2, 0, { partnerOf: F }); occupy(0, rx, rx + CW); sideOf[pt.id] = 1; rx += CW + CG; });
+  former.forEach(pt => { addNode(pt.id, lx - CW / 2, 0, { partnerOf: F }); occupy(0, lx - CW, lx); sideOf[pt.id] = -1; lx -= CW + CG; });
+
+  /* ---- descendants, grouped by co-parent, under each couple ---- */
+  function descUnit(id, depth) {
+    const u = { id, prt: [], kids: [], bud: null };
+    if (depth > 0) partnersOf(id).forEach(pt => u.prt.push(pt.id));
+    const kids = childrenOf(id).filter(c => !parentsOf(c).some(pp => pp !== id && !u.prt.includes(pp) && depth > 0 && false));
+    if (kids.length && (depth < MAX_DOWN || isOpen('down:' + id))) u.kids = kids.map(k => descUnit(k, depth + 1));
+    else if (kids.length) u.bud = { key: 'down:' + id, label: kids.length === 1 ? '1 child' : kids.length + ' children' };
+    const selfW = CW + u.prt.length * (CW + CG);
+    const kidsW = u.kids.reduce((s, k) => s + k.w, 0) + Math.max(0, u.kids.length - 1) * GAP;
+    u.w = Math.max(selfW, kidsW, u.bud ? BUDW : 0);
+    return u;
+  }
+  function descPlace(u, x, g, block) {
+    // the person sits left within the unit when they have a partner, so the couple is centered
+    const selfW = CW + u.prt.length * (CW + CG);
+    let px = x - selfW / 2 + CW / 2;
+    block.push({ id: u.id, x: px, y: genY(g), g, kind: 'person' });
+    const formerP = u.prt.filter(pid => (partnersOf(u.id).find(x => x.id === pid) || {}).sub === 'divorced');
+    const currentP = u.prt.filter(pid => !formerP.includes(pid));
+    px += formerP.length * (CW + CG);
+    block[block.length - 1].x = px;
+    let ox = px;
+    currentP.forEach(pid => { ox += CW + CG; block.push({ id: pid, x: ox, y: genY(g), g, kind: 'person', partnerOf: u.id }); });
+    ox = px;
+    formerP.forEach(pid => { ox -= CW + CG; block.push({ id: pid, x: ox, y: genY(g), g, kind: 'person', partnerOf: u.id }); });
+    const mid = currentP.length ? px + (CW + CG) / 2 : formerP.length ? px - (CW + CG) / 2 : px;
+    if (u.bud) block.push({ id: 'bud:' + u.bud.key, key: u.bud.key, x: mid, y: genY(g - 1), g: g - 1, kind: 'bud', label: u.bud.label, anchor: u.id });
+    const kidsW = u.kids.reduce((s, k) => s + k.w, 0) + Math.max(0, u.kids.length - 1) * GAP;
+    let kx = mid - kidsW / 2;
+    u.kids.forEach(k => { descPlace(k, kx + k.w / 2, g - 1, block); kx += k.w + GAP; });
+  }
+  const groups = new Map();
+  childrenOf(F).forEach(c => { const other = parentsOf(c).find(pp => pp !== F) || ''; if (!groups.has(other)) groups.set(other, []); groups.get(other).push(c); });
+  const orderedGroups = [...groups.entries()].sort((a, b) => (sideOf[a[0]] || 0) - (sideOf[b[0]] || 0));
+  for (const [other, kids] of orderedGroups) {
+    const ox = nodes.has(other) ? nodes.get(other).x : 0;
+    const mid = other && nodes.has(other) ? (ox + 0) / 2 : 0;
+    const units = kids.map(k => descUnit(k, 1));
+    const total = units.reduce((s, u) => s + u.w, 0) + (units.length - 1) * GAP;
+    const block = [];
+    let kx = mid - total / 2;
+    units.forEach(u => { descPlace(u, kx + u.w / 2, -1, block); kx += u.w + GAP; });
+    placeBlock(block, (sideOf[other] || 1));
+  }
+
+  /* ---- siblings of the centered person (left), with their families folded ---- */
+  const sibs = siblingsOf(F).filter(s => !nodes.has(s.id));
+  sibs.sort((a, b) => a.half - b.half);
+  for (const s of sibs) {
+    const block = [{ id: s.id, x: lx - CW / 2, y: 0, g: 0, kind: 'person', sibling: true, half: s.half }];
+    const fam = partnersOf(s.id).length + childrenOf(s.id).length;
+    if (fam) {
+      if (isOpen('fam:' + s.id)) {
+        let ox = lx - CW / 2;
+        partnersOf(s.id).forEach(pt => { ox -= CW + CG; block.push({ id: pt.id, x: ox, y: 0, g: 0, kind: 'person', partnerOf: s.id }); });
+        const mid = partnersOf(s.id).length ? (lx - CW / 2 + lx - CW / 2 - CW - CG) / 2 : lx - CW / 2;
+        const ks = childrenOf(s.id);
+        let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
+        ks.forEach(k => { block.push({ id: k, x: kx + CW / 2, y: genY(-1), g: -1, kind: 'person' }); kx += CW + GAP; });
+      } else {
+        block.push({ id: 'bud:fam:' + s.id, key: 'fam:' + s.id, x: lx - CW / 2, y: -(STATE.rootsBelow ? 1 : -1) * (CH / 2 + 26), g: -0.5, kind: 'bud', label: (P(s.id).first || '') + "'s family", count: fam, anchor: s.id });
+      }
+    }
+    placeBlock(block, -1);
+    lx = Math.min(...block.filter(n => n.g === 0).map(n => nodeSpan(n)[0])) - GAP;
+  }
+
+  /* ---- married-in families (partners of the centered person and of their children) ---- */
+  const inlawFor = [...current.map(x => [x.id, 1]), ...former.map(x => [x.id, -1])];
+  [...nodes.values()].filter(n => n.kind === 'person' && n.partnerOf && n.g < 0).forEach(n => inlawFor.push([n.id, 1]));
+  for (const [pid, dir] of inlawFor) {
+    const n = nodes.get(pid); if (!n) continue;
+    const kin = parentsOf(pid).length + siblingsOf(pid).length;
+    if (!kin) continue;
+    const key = 'in:' + pid;
+    if (!isOpen(key)) {
+      placeBud({ id: 'bud:' + key, key, x: n.x + dir * (CW / 2 + GAP + BUDW / 2), y: n.y, g: n.g, kind: 'bud', label: (P(pid).first || 'Their') + "'s family", count: kin, anchor: pid }, n, dir, STATE.rootsBelow ? 1 : -1);
+      continue;
+    }
+    const block = [];
+    const sibIds = siblingsOf(pid).map(s => s.id);
+    let sx = n.x + dir * (CW + GAP);
+    sibIds.forEach(sid => { block.push({ id: sid, x: sx, y: n.y, g: n.g, kind: 'person', inlaw: pid }); sx += dir * (CW + GAP); });
+    const pars = parentsOf(pid);
+    const center = sibIds.length ? (n.x + sx - dir * (CW + GAP)) / 2 : n.x;
+    pars.forEach((par, i) => block.push({ id: par, x: center + (i - (pars.length - 1) / 2) * (CW + CG), y: genY(n.g + 1), g: n.g + 1, kind: 'person', inlaw: pid }));
+    placeBlock(block, dir);
+  }
+
+  /* ---- edges ---- */
+  const placed = new Set(nodes.keys());
+  // parent to child
+  for (const n of nodes.values()) {
+    if (n.kind !== 'person') continue;
+    const pars = parentsOf(n.id).filter(p => placed.has(p));
+    if (!pars.length) continue;
+    const couple = pars.length === 2 && partnersOf(pars[0]).some(x => x.id === pars[1]);
+    const groupsP = couple ? [pars] : pars.map(p => [p]);
+    groupsP.forEach(gp => edges.push({ id: 'pc:' + gp.join('+') + '>' + n.id, kind: 'pc', parents: gp, child: n.id,
+      pending: G.pending.has(gp[0] + '>' + n.id) || !!P(n.id).pending, sub: G.pcSub.get(gp[0] + '>' + n.id) || 'biological',
+      half: gp.length === 1 && parentsOf(n.id).length === 2 }));
+  }
+  // partners
+  const seen = new Set();
+  for (const n of nodes.values()) {
+    if (n.kind !== 'person') continue;
+    for (const pt of partnersOf(n.id)) {
+      if (!placed.has(pt.id)) continue;
+      const k = [n.id, pt.id].sort().join('~');
+      if (seen.has(k)) continue; seen.add(k);
+      const m = nodes.get(pt.id);
+      if (m.g !== n.g) continue;
+      edges.push({ id: 'pt:' + k, kind: 'partner', a: n.id, b: pt.id, sub: pt.sub });
+    }
+  }
+  // which opened groups hang from which card, so each can be folded again
+  if (!STATE.all) for (const key of STATE.open) {
+    const anchor = key.slice(key.indexOf(':') + 1);
+    const n = nodes.get(anchor);
+    if (n) (n.folds = n.folds || []).push(key);
+  }
+  return { nodes, edges };
+}
+
+/* =====================================================================
+ * Rendering with a small animation engine: every node glides from where it was to where it goes;
+ * new branches grow outward from the center, folded ones draw back in.
+ * ===================================================================== */
+const $ = s => document.querySelector(s);
+const world = $('#world'), nodesEl = $('#nodes'), edgeG = $('#edgeg'), ringsG = $('#rings'), groundG = $('#groundg');
+const SVGNS = 'http://www.w3.org/2000/svg';
+const live = new Map();      // id -> { el, x, y, fx, fy, tx, ty, op, fop, top, leaving }
+const liveEdges = new Map(); // id -> { el, grow, from, to, t0, delay, data, leaving, deco }
+let anim = { t0: 0, dur: 650, running: false };
+let currentLayout = null;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const ICON = {
+  bud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-7"/><path d="M12 13c-4 0-6-3-6-7 4 0 6 3 6 7z"/><path d="M12 13c4 0 6-3 6-7-4 0-6 3-6 7z"/></svg>',
+  fold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 12h10"/></svg>',
+  rings: '<svg viewBox="40 30 100 54"><circle cx="70" cy="57" r="22.5" fill="none" stroke="#A9822F" stroke-width="8" mask="url(#lgA)"/><circle cx="106" cy="57" r="22.5" fill="none" stroke="#A9822F" stroke-width="8" mask="url(#lgB)"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
+};
+
+function cardHTML(n) {
+  const p = P(n.id);
+  const rel = relation(n.id);
+  const yrs = years(p);
+  const twice = n.kind === 'person' && connectedTwice(n.id);
+  return `<span class="av">${initials(p)}</span><span class="txt"><span class="nm">${p.placeholder ? 'Unknown' : esc(displayName(p))}</span><span class="rl">${esc(p.placeholder ? (rel || 'Add a name') : rel)}</span>${yrs ? `<span class="yr">${yrs}</span>` : ''}</span>`
+    + (p.pending ? '<span class="tag">Unconfirmed</span>' : '')
+    + (twice ? `<span class="twice" title="Related twice">${ICON.rings}twice</span>` : '');
+}
+function foldLabel(key) {
+  const [kind, id] = key.split(':'), p = P(id) || {};
+  return { sib: (p.first || '') + "'s siblings", op: (p.first || '') + "'s other marriage", fam: (p.first || '') + "'s family", in: (p.first || '') + "'s family", up: 'earlier generations', down: (p.first || '') + "'s descendants" }[kind] || 'branch';
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
+
+function makeNodeEl(n) {
+  const wrap = document.createElement('div');
+  wrap.className = 'node';
+  let el;
+  if (n.kind === 'bud') {
+    el = document.createElement('button');
+    el.className = 'bud';
+    el.innerHTML = `${ICON.bud}<span>${esc(n.label)}</span>${n.count ? `<span class="n">${n.count}</span>` : ''}`;
+    el.setAttribute('aria-label', 'Open ' + n.label);
+    el.addEventListener('click', e => { e.stopPropagation(); STATE.open.add(n.key); render({ grow: true }); });
+  } else {
+    el = document.createElement('button');
+    el.className = 'card';
+    el.addEventListener('click', e => { e.stopPropagation(); openPerson(n.id); });
+  }
+  wrap.appendChild(el);
+  return wrap;
+}
+function updateNodeEl(rec, n) {
+  const el = rec.el.firstChild;
+  if (n.kind === 'person') {
+    const p = P(n.id);
+    el.className = 'card' + (n.id === STATE.focus ? ' focus' : '') + (p.placeholder ? ' placeholder' : '') + (p.pending ? ' pending' : '') + (!isLiving(p) && !p.placeholder ? ' deceased' : '') + (STATE.selected === n.id ? ' selected' : '');
+    el.innerHTML = cardHTML(n);
+    el.setAttribute('aria-label', displayName(p) + ', ' + relation(n.id));
+    rec.el.querySelectorAll('.fold').forEach(f => f.remove());
+    (n.folds || []).forEach((key, i) => {
+      const f = document.createElement('button');
+      f.className = 'fold';
+      f.style.top = (-(n.id === STATE.focus ? FH : CH) / 2 - 12) + 'px'; f.style.zIndex = 3;
+      f.style.left = (((n.id === STATE.focus ? FW : CW) / 2) - 26 - i * 30) + 'px';
+      f.innerHTML = ICON.fold;
+      f.title = 'Fold ' + foldLabel(key);
+      f.setAttribute('aria-label', 'Fold ' + foldLabel(key));
+      f.addEventListener('click', e => { e.stopPropagation(); STATE.open.delete(key); render({ camera: false }); });
+      rec.el.appendChild(f);
+    });
+  }
+}
+
+function render(opts = {}) {
+  const L = layout();
+  currentLayout = L;
+  const now = performance.now();
+  const anchorPos = id => { const r = live.get(id); return r && !r.leaving ? { x: r.x, y: r.y } : null; };
+  const focusT = L.nodes.get(STATE.focus);
+  // nodes
+  for (const n of L.nodes.values()) {
+    let rec = live.get(n.id);
+    if (!rec || rec.leaving) {
+      if (rec) rec.el.remove();
+      const el = makeNodeEl(n);
+      nodesEl.appendChild(el);
+      const origin = (n.anchor && anchorPos(n.anchor)) || nearestOrigin(n, L) || { x: n.x, y: n.y };
+      rec = { el, x: origin.x, y: origin.y, op: 0, sc: .6 };
+      live.set(n.id, rec);
+    }
+    rec.leaving = false;
+    rec.fx = rec.x; rec.fy = rec.y; rec.fop = rec.op; rec.fsc = rec.sc;
+    rec.tx = n.x; rec.ty = n.y; rec.top = 1; rec.tsc = 1;
+    rec.node = n;
+    updateNodeEl(rec, n);
+  }
+  for (const [id, rec] of live) {
+    if (L.nodes.has(id) || rec.leaving) continue;
+    rec.leaving = true;
+    const back = (rec.node && rec.node.anchor && L.nodes.get(rec.node.anchor)) || collapseTarget(id, L) || { x: rec.x, y: rec.y };
+    rec.fx = rec.x; rec.fy = rec.y; rec.fop = rec.op; rec.fsc = rec.sc;
+    rec.tx = back.x; rec.ty = back.y; rec.top = 0; rec.tsc = .6;
+  }
+  // edges
+  const fg = n => Math.abs(n.g);
+  for (const e of L.edges) {
+    let rec = liveEdges.get(e.id);
+    if (!rec || rec.leaving) {
+      if (rec) rec.el.remove();
+      const el = document.createElementNS(SVGNS, 'path');
+      el.setAttribute('pathLength', '1');
+      edgeG.appendChild(el);
+      rec = { el, grow: 0 };
+      liveEdges.set(e.id, rec);
+      const outer = e.kind === 'pc' ? L.nodes.get(e.child) : L.nodes.get(e.b || e.a);
+      const depth = outer ? Math.max(0, Math.abs(outer.g) - 1) : 0;
+      rec.delay = opts.grow === false ? 0 : (e.kind === 'stem' ? 260 : 120 + depth * 140);
+    } else rec.delay = 0;
+    rec.leaving = false;
+    rec.from = rec.grow; rec.to = 1; rec.data = e;
+  }
+  for (const [id, rec] of liveEdges) if (!L.edges.some(e => e.id === id) && !rec.leaving) { rec.leaving = true; rec.from = rec.grow; rec.to = 0; rec.delay = 0; }
+  drawRings(focusT);
+  drawGround();
+  anim.t0 = now; anim.dur = reduceMotion ? 1 : 700;
+  if (opts.camera !== false) cameraTo(focusT, opts.camera === 'instant');
+  if (!anim.running) { anim.running = true; requestAnimationFrame(tick); }
+}
+function nearestOrigin(n, L) {
+  // new people grow out of whoever they hang from
+  const cand = [...parentsOf(n.id), ...childrenOf(n.id), ...partnersOf(n.id).map(x => x.id)];
+  for (const c of cand) { const r = live.get(c); if (r && !r.leaving) return { x: r.x, y: r.y }; }
+  return null;
+}
+function collapseTarget(id, L) {
+  const cand = [...parentsOf(id), ...childrenOf(id), ...partnersOf(id).map(x => x.id)];
+  for (const c of cand) { const n = L.nodes.get(c); if (n) return n; }
+  return L.nodes.get(STATE.focus);
+}
+const ease = t => 1 - Math.pow(1 - t, 3);
+function tick(now) {
+  const t = Math.min(1, (now - anim.t0) / anim.dur), k = ease(t);
+  for (const [id, r] of live) {
+    r.x = r.fx + (r.tx - r.fx) * k; r.y = r.fy + (r.ty - r.fy) * k;
+    r.op = r.fop + (r.top - r.fop) * k; r.sc = r.fsc + (r.tsc - r.fsc) * k;
+    r.el.style.transform = `translate(${r.x}px, ${r.y}px) scale(${r.sc})`;
+    r.el.style.opacity = r.op;
+    if (r.leaving && t >= 1) { r.el.remove(); live.delete(id); }
+  }
+  let edgesBusy = false;
+  for (const [id, r] of liveEdges) {
+    const et = reduceMotion ? 1 : Math.max(0, Math.min(1, (now - anim.t0 - r.delay) / (r.leaving ? 300 : 650)));
+    r.grow = r.from + (r.to - r.from) * ease(et);
+    if (et < 1) edgesBusy = true;
+    drawEdge(r);
+    if (r.leaving && et >= 1) { r.el.remove(); liveEdges.delete(id); }
+  }
+  stepCamera(now);
+  if (t < 1 || edgesBusy || cam.moving) requestAnimationFrame(tick); else anim.running = false;
+}
+function pos(id) { const r = live.get(id); return r ? r : null; }
+function halfH(id) { return id === STATE.focus ? FH / 2 : CH / 2; }
+function halfW(id) { return id === STATE.focus ? FW / 2 : CW / 2; }
+function drawEdge(r) {
+  const e = r.data, el = r.el;
+  let d = '', cls = 'edge';
+  if (e.kind === 'pc') {
+    const c = pos(e.child), ps = e.parents.map(pos);
+    if (!c || ps.some(x => !x)) { el.setAttribute('d', ''); return; }
+    const ax = ps.reduce((s, p) => s + p.x, 0) / ps.length, ay = ps.reduce((s, p) => s + p.y, 0) / ps.length;
+    const childOlder = false;
+    const down = c.y > ay; // child is below the parents on screen
+    const parentEdgeY = ps.length === 2 ? ay : ay + (down ? 1 : -1) * halfH(e.parents[0]);
+    const childEdgeY = c.y + (down ? -1 : 1) * halfH(e.child);
+    // grow from whichever end is nearer the center of the tree
+    const fromParent = Math.abs(ay) < Math.abs(c.y) || e.parents.includes(STATE.focus);
+    const [x1, y1, x2, y2] = fromParent ? [ax, parentEdgeY, c.x, childEdgeY] : [c.x, childEdgeY, ax, parentEdgeY];
+    const my = (y1 + y2) / 2;
+    d = `M${x1} ${y1} C${x1} ${my} ${x2} ${my} ${x2} ${y2}`;
+    const isRoot = STATE.rootsBelow ? (Math.max(ay, c.y) > 0.5 * ROW && ay > c.y) : false;
+    const gen = Math.max(Math.abs(Math.round(ay / ROW)), Math.abs(Math.round(c.y / ROW)));
+    cls += isRoot ? ' root' : ' branch';
+    el.style.strokeWidth = Math.max(1.3, 3.4 - gen * 0.55);
+    if (e.half) el.style.strokeOpacity = .55;
+    else el.style.strokeOpacity = '';
+    r.dash = e.pending || P(e.child).placeholder || e.parents.some(x => P(x).placeholder) ? '0.02 0.03' : null;
+  } else if (e.kind === 'partner') {
+    const a = pos(e.a), b = pos(e.b);
+    if (!a || !b) { el.setAttribute('d', ''); return; }
+    const [l, rr] = a.x < b.x ? [e.a, e.b] : [e.b, e.a];
+    const L = pos(l), R = pos(rr);
+    const x1 = L.x + halfW(l), x2 = R.x - halfW(rr), y = (L.y + R.y) / 2;
+    d = `M${x1} ${y} L${x2} ${y}`;
+    cls += ' partner' + (e.sub === 'divorced' ? ' former' : '');
+    r.dash = e.sub === 'divorced' ? '0.05 0.05' : null;
+    drawRingMark(r, (x1 + x2) / 2, y, e.sub);
+  } else if (e.kind === 'stem') {
+    const a = pos(e.a), b = pos(e.b);
+    if (!a || !b) { el.setAttribute('d', ''); return; }
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const x1 = a.x + Math.sign(dx) * (Math.abs(dy) > 10 ? 0 : halfW(e.a)), y1 = a.y + (Math.abs(dy) > 10 ? Math.sign(dy) * halfH(e.a) : 0);
+    const x2 = b.x - Math.sign(dx) * (Math.abs(dy) > 10 ? 0 : BUDW / 2), y2 = b.y - (Math.abs(dy) > 10 ? Math.sign(dy) * 15 : 0);
+    d = `M${x1} ${y1} L${x2} ${y2}`;
+    cls += ' stem';
+    r.dash = '0.04 0.05';
+  }
+  el.setAttribute('class', cls);
+  el.setAttribute('d', d);
+  // grow: draw the first `grow` of the path; dashed styles are masked by growth through dashoffset trick
+  if (r.dash) { el.style.strokeDasharray = r.dash; el.style.opacity = r.grow; el.style.strokeDashoffset = 0; }
+  else { el.style.strokeDasharray = `${r.grow} 2`; el.style.opacity = 1; el.style.strokeDashoffset = 0; }
+}
+function drawRingMark(r, x, y, sub) {
+  if (!r.deco) {
+    r.deco = document.createElementNS(SVGNS, 'g');
+    r.deco.innerHTML = '<circle r="5" cx="-3.5" fill="#F8F6F1" stroke="#1D2B24" stroke-width="1.5"/><circle r="5" cx="3.5" fill="none" stroke="#1D2B24" stroke-width="1.5"/>';
+    edgeG.appendChild(r.deco);
+    const orig = r.el.remove.bind(r.el);
+    r.el.remove = () => { orig(); r.deco.remove(); };
+  }
+  r.deco.setAttribute('transform', `translate(${x} ${y}) scale(${r.grow})`);
+  r.deco.style.opacity = sub === 'divorced' ? .4 : 1;
+}
+function drawRings(focusT) {
+  ringsG.innerHTML = '';
+  if (!focusT) return;
+  for (let i = 1; i <= 6; i++) {
+    const c = document.createElementNS(SVGNS, 'circle');
+    c.setAttribute('class', 'ring'); c.setAttribute('cx', focusT.x); c.setAttribute('cy', focusT.y);
+    c.setAttribute('r', 90 + i * i * 34); c.setAttribute('stroke-width', 1 + (i % 2));
+    ringsG.appendChild(c);
+  }
+}
+function drawGround() {
+  groundG.innerHTML = '';
+  if (!STATE.rootsBelow) return;
+  const y = FH / 2 + 26;
+  document.querySelector('#soilmask rect').setAttribute('y', y);
+  groundG.innerHTML = `<rect x="-6000" y="${y}" width="12000" height="900" fill="url(#soil)" mask="url(#soilmask)"/><line class="ground" x1="-6000" x2="6000" y1="${y}" y2="${y}"/>`;
+}
+
+/* =====================================================================
+ * Camera: drag to pan, wheel or pinch to zoom, glide to the centered person.
+ * ===================================================================== */
+const stage = $('#stage');
+const cam = { x: 0, y: 0, s: 1, fx: 0, fy: 0, fs: 1, tx: 0, ty: 0, ts: 1, t0: 0, moving: false };
+function applyCam() { world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.s})`; }
+function cameraTo(n, instant) {
+  if (!n) return;
+  const vw = innerWidth, vh = innerHeight;
+  const s = cam.ts || (vw < 640 ? .48 : .8);
+  const tx = vw / 2 - n.x * s, ty = vh * (STATE.rootsBelow ? .42 : .55) - n.y * s;
+  if (instant || reduceMotion) { Object.assign(cam, { x: tx, y: ty, s, tx, ty, ts: s, moving: false }); applyCam(); return; }
+  Object.assign(cam, { fx: cam.x, fy: cam.y, fs: cam.s, tx, ty, ts: s, t0: performance.now(), moving: true });
+}
+function stepCamera(now) {
+  if (!cam.moving) return;
+  const t = Math.min(1, (now - cam.t0) / 700), k = ease(t);
+  cam.x = cam.fx + (cam.tx - cam.fx) * k; cam.y = cam.fy + (cam.ty - cam.fy) * k; cam.s = cam.fs + (cam.ts - cam.fs) * k;
+  applyCam();
+  if (t >= 1) cam.moving = false;
+}
+function zoomAt(f, cx, cy) {
+  const ns = Math.min(1.8, Math.max(.3, cam.s * f));
+  cam.x = cx - (cx - cam.x) * (ns / cam.s); cam.y = cy - (cy - cam.y) * (ns / cam.s); cam.s = ns; cam.ts = ns; cam.moving = false; applyCam();
+}
+const pointers = new Map(); let pinch = null, dragMoved = false;
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('button')) return;
+  stage.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); dragMoved = false; cam.moving = false;
+  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; }
+  stage.classList.add('dragging');
+});
+stage.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2 && pinch) {
+    const [a, b] = [...pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+    zoomAt(d / pinch.d, (a.x + b.x) / 2, (a.y + b.y) / 2); pinch.d = d; return;
+  }
+  cam.x += e.clientX - prev.x; cam.y += e.clientY - prev.y; cam.tx = cam.x; cam.ty = cam.y; applyCam();
+  if (Math.abs(e.clientX - prev.x) + Math.abs(e.clientY - prev.y) > 2) dragMoved = true;
+});
+const endPtr = e => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = null; if (!pointers.size) stage.classList.remove('dragging'); };
+stage.addEventListener('pointerup', endPtr); stage.addEventListener('pointercancel', endPtr);
+stage.addEventListener('wheel', e => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * .0015), e.clientX, e.clientY); }, { passive: false });
+stage.addEventListener('click', e => { if (!e.target.closest('button') && !dragMoved) closePanel(); });
+$('#btnZoomIn').onclick = () => zoomAt(1.2, innerWidth / 2, innerHeight / 2);
+$('#btnZoomOut').onclick = () => zoomAt(1 / 1.2, innerWidth / 2, innerHeight / 2);
+$('#btnHome').onclick = () => { closePanel(); STATE.focus = STATE.viewer; render(); };
+addEventListener('resize', () => cameraTo(currentLayout && currentLayout.nodes.get(STATE.focus), true));
+
+/* =====================================================================
+ * Pop-out person panel, edit and add forms
+ * ===================================================================== */
+const panel = $('#panel'), scrim = $('#scrim');
+function openPanel(html) { panel.innerHTML = html; panel.classList.add('on'); if (innerWidth <= 700) scrim.classList.add('on'); }
+function closePanel() { panel.classList.remove('on'); scrim.classList.remove('on'); if (STATE.selected) { STATE.selected = null; refreshCards(); } }
+scrim.onclick = closePanel;
+function refreshCards() { for (const [id, r] of live) if (r.node && r.node.kind === 'person') updateNodeEl(r, r.node); }
+
+function openPerson(id) {
+  STATE.selected = id; refreshCards();
+  const p = P(id), living = isLiving(p), rel = relation(id), twice = connectedTwice(id);
+  const name = p.placeholder ? 'Unknown' : displayName(p);
+  const full = living || p.placeholder ? name : [p.first, p.middle, p.last].filter(Boolean).join(' ') + (p.birth ? ` (born ${p.birth})` : '');
+  let body = '';
+  if (p.placeholder) {
+    body += `<p class="story">Nobody has named this person yet. If you know who ${rel ? 'this ' + rel.toLowerCase() : 'they'} was, add what you know. Even a first name helps.</p>`;
+  } else if (living) {
+    body += id === STATE.viewer
+      ? `<div class="private">${ICON.lock}<span>Relatives see only your name. Your dates, places and stories stay private. Jonny can see everything.</span></div>`
+      : `<div class="private">${ICON.lock}<span>${esc(p.first)} is living, so only their name shows here. Dates, places and stories stay private while they're alive.</span></div>`;
+  } else {
+    body += `<dl class="facts">${p.born ? `<dt>Born</dt><dd>${esc(String(p.born).replace('about', 'About'))}${p.bornPlace ? ', ' + esc(p.bornPlace) : ''}</dd>` : ''}${p.died ? `<dt>Died</dt><dd>${esc(p.died)}</dd>` : ''}${p.birth ? `<dt>Born as</dt><dd>${esc(p.first + ' ' + p.birth)}</dd>` : ''}</dl>`;
+    if (p.notes) body += `<p class="story">${esc(p.notes)}</p>`;
+  }
+  if (twice) body += `<div class="twicebox">${ICON.rings}<span>Related twice: ${esc(p.first)} and ${esc(P(twice.partner).first)} both descend from ${esc(displayName(P(twice.ancestor)))}.</span></div>`;
+  if (p.pending) body += `<div class="private"><span>You added ${esc(p.first)}. Jonny hasn't confirmed this yet, so only you can see it.</span></div>`;
+  if (!p.placeholder) {
+    const tiles = Array.from({ length: Math.min(p.photos || 0, 3) }, () => '<div class="photo" role="img" aria-label="Photo"></div>').join('');
+    body += `<div><div class="label">Photos</div><div class="photos">${tiles}<button class="photo add" id="pAddPhoto">Add a photo</button></div></div>`;
+  }
+  if (!p.placeholder && !living) body += `<p class="prov">Added by ${esc(p.addedBy || 'Daniel Marlow')}${p.source ? ' · Source: ' + esc(p.source) : ''}</p>`;
+  const isFocus = id === STATE.focus;
+  openPanel(`
+    <div class="head"><div class="av" style="${living ? '' : 'background:#E9E1CC;color:#6E5A2A'}">${initials(p)}</div>
+      <div><h2>${esc(full)}</h2><div class="sub">${esc([rel, years(p)].filter(Boolean).join(' · '))}</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body">${body}</div>
+    <div class="foot">
+      ${isFocus ? '' : `<button class="primary" id="pCenter">Center the tree on ${esc(p.placeholder ? 'them' : p.first)}</button>`}
+      <button class="iconbtn" id="pAdd">Add a relative</button>
+      <button class="iconbtn" id="pEdit">${p.placeholder ? 'Fill in' : 'Edit'}</button>
+    </div>`);
+  $('#pClose').onclick = closePanel;
+  if (!isFocus) $('#pCenter').onclick = () => { closePanel(); STATE.focus = id; render(); };
+  $('#pAdd').onclick = () => openAdd(id);
+  $('#pEdit').onclick = () => openEdit(id);
+  const ap = $('#pAddPhoto'); if (ap) ap.onclick = () => toast('Photo upload comes with the photos step');
+}
+
+function fieldsHTML(p, living) {
+  return `
+    <div class="row2"><div class="field"><label for="fFirst">First name</label><input id="fFirst" value="${esc(p.first || '')}" autocomplete="off"></div>
+      <div class="field"><label for="fLast">Last name</label><input id="fLast" value="${esc(p.last || '')}" autocomplete="off"></div></div>
+    <div class="field"><span class="lab">Are they living?</span><div class="seg" id="fLiving">
+      <button type="button" data-v="living" aria-pressed="${living === true}">Living</button><button type="button" data-v="deceased" aria-pressed="${living === false}">Passed away</button><button type="button" data-v="unknown" aria-pressed="${living === null}">Not sure</button></div></div>
+    <div class="row2"><div class="field"><label for="fBorn">Born (year, or "about 1932")</label><input id="fBorn" value="${esc(p.born || '')}" inputmode="text"></div>
+      <div class="field"><label for="fDied">Died</label><input id="fDied" value="${esc(p.died || '')}"></div></div>
+    <div class="field"><label for="fPlace">Where were they born?</label><input id="fPlace" value="${esc(p.bornPlace || '')}" placeholder="&quot;Cleveland&quot; or &quot;somewhere in Ohio&quot; is fine"></div>
+    <div class="field"><label for="fNotes">Anything you remember</label><textarea id="fNotes" placeholder="A job, a habit, a story they told">${esc(p.notes || '')}</textarea></div>
+    <div class="field"><label for="fSource">How do you know?</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(p.source || '')}"></div>
+    <p class="hint">Only a name is needed. "Unknown" counts as a name. Living people show first and last name only; everything else stays private.</p>`;
+}
+function wireSeg(id) { document.querySelectorAll('#' + id + ' button').forEach(b => b.onclick = () => document.querySelectorAll('#' + id + ' button').forEach(x => x.setAttribute('aria-pressed', x === b))); }
+function readForm() {
+  const v = id => ($('#' + id) || {}).value || '';
+  const lv = (document.querySelector('#fLiving [aria-pressed="true"]') || {}).dataset;
+  return { first: v('fFirst').trim(), last: v('fLast').trim(), born: v('fBorn').trim(), died: v('fDied').trim(), bornPlace: v('fPlace').trim(), notes: v('fNotes').trim(), source: v('fSource').trim(), living: lv ? lv.v : 'unknown' };
+}
+function openEdit(id) {
+  const p = P(id);
+  openPanel(`
+    <div class="head"><div><h2>${p.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">Your changes go to Jonny to confirm. Nobody's entry gets overwritten.</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <form class="body form" id="editForm">${fieldsHTML(p, p.placeholder ? null : isLiving(p))}</form>
+    <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
+  wireSeg('fLiving');
+  $('#pClose').onclick = closePanel; $('#pBack').onclick = () => openPerson(id);
+  $('#editForm').onsubmit = e => e.preventDefault();
+  $('#pSave').onclick = () => {
+    const f = readForm();
+    if (!f.first && !f.last) { toast('Add at least a name. "Unknown" works.'); return; }
+    const who = f.first || f.last;
+    const tgt = P(id);
+    if (tgt.placeholder) Object.assign(tgt, { placeholder: false, pending: true, first: f.first, last: f.last, born: f.born, died: f.died, notes: f.notes, living: f.living === 'living', sex: '' });
+    closePanel();
+    showThanks(`Thank you. ${esc(who)} is saved.`, 'Jonny looks over every change before everyone sees it. Until then you’ll see it on your tree, marked unconfirmed.');
+    render({ camera: false });
+  };
+}
+function openAdd(id) {
+  const p = P(id);
+  openPanel(`
+    <div class="head"><div><h2>Add someone to ${esc(p.placeholder ? 'this branch' : p.first + "'s branch")}</h2><div class="sub">Add who you know, including relatives who have died.</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <form class="body form" id="addForm">
+      <div class="field"><span class="lab">They are ${esc(p.first || 'this person')}'s</span><div class="seg" id="fRel">
+        <button type="button" data-v="parent" aria-pressed="false">Parent</button><button type="button" data-v="partner" aria-pressed="false">Partner</button><button type="button" data-v="sibling" aria-pressed="false">Sibling</button><button type="button" data-v="child" aria-pressed="true">Child</button></div></div>
+      ${fieldsHTML({}, null)}
+    </form>
+    <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
+  wireSeg('fRel'); wireSeg('fLiving');
+  $('#pClose').onclick = closePanel; $('#pBack').onclick = () => openPerson(id);
+  $('#addForm').onsubmit = e => e.preventDefault();
+  $('#pSave').onclick = () => {
+    const f = readForm();
+    if (!f.first && !f.last) { toast('Add at least a name. "Unknown" works.'); return; }
+    const relKind = document.querySelector('#fRel [aria-pressed="true"]').dataset.v;
+    const nid = 'new' + Date.now();
+    const person = { id: nid, first: f.first || 'Unknown', last: f.last, born: f.born, died: f.died, bornPlace: f.bornPlace, notes: f.notes, source: f.source, living: f.living === 'living', pending: true, sex: '', addedBy: 'you' };
+    SAMPLE.people.push(person);
+    if (relKind === 'child') SAMPLE.rels.push(['pc', id, nid, 'biological', true]);
+    if (relKind === 'parent') SAMPLE.rels.push(['pc', nid, id, 'biological', true]);
+    if (relKind === 'partner') SAMPLE.rels.push(['partner', id, nid, 'partner']);
+    if (relKind === 'sibling') { const ps = parentsOf(id); if (ps.length) ps.forEach(pp => SAMPLE.rels.push(['pc', pp, nid, 'biological', true])); else { SAMPLE.people.push({ id: nid + 'p', placeholder: true }); SAMPLE.rels.push(['pc', nid + 'p', id], ['pc', nid + 'p', nid, 'biological', true]); } }
+    G = buildGraph(SAMPLE);
+    closePanel();
+    showThanks(`Thank you. ${esc(person.first)} is planted.`, `Jonny looks over every addition before everyone sees it. Until then ${esc(person.first)} shows on your tree, marked unconfirmed.`);
+    pendingGrow = true;
+  };
+}
+let pendingGrow = false;
+
+/* =====================================================================
+ * Pages: thank you, send to family, intro, search
+ * ===================================================================== */
+function showPage(id) { $('#' + id).classList.add('on'); }
+function hidePage(id) { $('#' + id).classList.remove('on'); }
+function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; showPage('thanks'); }
+$('#thanksBack').onclick = () => { hidePage('thanks'); if (pendingGrow) { pendingGrow = false; setTimeout(() => render({ camera: false }), 200); } };
+$('#thanksSend').onclick = () => { hidePage('thanks'); if (pendingGrow) { pendingGrow = false; render({ camera: false }); } openSend(); };
+
+function shareLink() { return 'https://lumen-drogulus.github.io/roots/?from=' + STATE.viewer; }
+function openSend() {
+  const v = P(STATE.viewer);
+  const msg = `I'm helping build our family tree. Open this, look around, and add anyone you know, especially the relatives we've lost. It takes a minute.\n\n${shareLink()}`;
+  openPanel(`
+    <div class="head"><div><h2>Send Roots to a family member</h2><div class="sub">The link opens the tree on you, ${esc(v.first)}, so they start somewhere familiar.</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body sendbox">
+      <div class="field"><label for="sMsg">Message</label><textarea id="sMsg" style="min-height:140px">${esc(msg)}</textarea></div>
+      <div class="field"><label for="sLink">Link</label><div class="linkrow"><input id="sLink" readonly value="${esc(shareLink())}"><button class="iconbtn" id="sCopyLink">Copy link</button></div></div>
+      <p class="hint">Anyone with the link sees the tree as it stands. Living people show by first and last name only.</p>
+    </div>
+    <div class="foot">${navigator.share ? '<button class="iconbtn" id="sShare">Share…</button>' : ''}<button class="primary" id="sCopy">Copy message</button></div>`);
+  $('#pClose').onclick = closePanel;
+  const copy = async (text, done) => { try { await navigator.clipboard.writeText(text); toast(done); } catch (e) { const t = $('#sMsg'); t.focus(); t.select(); toast('Select the text and copy it'); } };
+  $('#sCopy').onclick = () => copy($('#sMsg').value, 'Message copied. Paste it into a text or email.');
+  $('#sCopyLink').onclick = () => copy(shareLink(), 'Link copied');
+  const sh = $('#sShare'); if (sh) sh.onclick = () => navigator.share({ title: 'Roots', text: $('#sMsg').value }).catch(() => {});
+}
+$('#btnSend').onclick = openSend;
+
+let toastT;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2600); }
+
+function openSearch() {
+  openPanel(`
+    <div class="head"><div><h2>Find a person</h2><div class="sub">Everyone in the tree, open branches or not.</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body"><div class="field"><label for="qName">Name</label><input id="qName" placeholder="Start typing a name" autocomplete="off"></div><div class="pick" id="qList"></div></div>`);
+  $('#pClose').onclick = closePanel;
+  const list = () => {
+    const q = $('#qName').value.toLowerCase().trim();
+    const hits = [...G.people.values()].filter(p => !p.placeholder && (!q || displayName(p).toLowerCase().includes(q) || (p.birth || '').toLowerCase().includes(q))).slice(0, 40);
+    $('#qList').innerHTML = hits.map(p => `<button data-id="${p.id}"><span>${esc(displayName(p))}</span><small>${esc([relation(p.id), years(p)].filter(Boolean).join(' · '))}</small></button>`).join('') || '<p class="hint">Nobody by that name yet. You can add them.</p>';
+    document.querySelectorAll('#qList button').forEach(b => b.onclick = () => { closePanel(); STATE.focus = b.dataset.id; render(); });
+  };
+  $('#qName').oninput = list; list(); setTimeout(() => $('#qName').focus(), 50);
+}
+$('#btnSearch').onclick = openSearch;
+
+$('#btnAll').onclick = () => { STATE.all = !STATE.all; $('#btnAll').setAttribute('aria-pressed', STATE.all); if (!STATE.all) STATE.open.clear(); render({ camera: false }); };
+
+/* ---- intro ---- */
+const INTRO = [
+  () => `
+    <svg viewBox="4 8 216 112" style="width:180px;height:auto" aria-hidden="true">${document.querySelector('.topbar .logo').innerHTML}</svg>
+    <h1>Welcome to our family tree.</h1>
+    <p class="lede">Why I built this</p>
+    <p class="placeholder-copy">[Jonny's story goes here: why this tree, who it's for, and the people we've lost whose names shouldn't disappear with them. A few short paragraphs in his own words.]</p>
+    <p class="sig">Jonny</p>`,
+  () => `
+    <h1>How it works</h1>
+    <ul class="howto">
+      <li><span class="ic">${ICON.bud.replace('currentColor', '#A9822F')}</span><div><b>Tap anyone to see their story.</b><span>Names, dates and memories for those who've passed. Living relatives show by name only.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it, or use Show all.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><b>Add who you know.</b><span>Especially the relatives we've lost. A first name is enough to start. Jonny confirms each addition.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
+    </ul>`,
+  () => `
+    <h1>Which one is you?</h1>
+    <p>Pick yourself so the tree knows where you fit. You can skip this and do it when you add someone.</p>
+    <div class="field"><label for="iName">Your name</label><input id="iName" placeholder="Start typing" autocomplete="off"></div>
+    <div class="pick" id="iList"></div>`
+];
+let introStep = 0;
+function renderIntro() {
+  const last = introStep === INTRO.length - 1;
+  $('#introInner').innerHTML = INTRO[introStep]() + `
+    <div class="actions">
+      ${introStep > 0 ? '<button class="iconbtn" id="iBack">Back</button>' : ''}
+      <button class="primary" id="iNext">${last ? 'Skip for now' : introStep === 0 ? 'Show me how it works' : 'Next'}</button>
+      <span style="flex:1"></span><div class="dots">${INTRO.map((_, i) => `<i class="${i === introStep ? 'on' : ''}"></i>`).join('')}</div>
+    </div>`;
+  if (introStep > 0) $('#iBack').onclick = () => { introStep--; renderIntro(); };
+  $('#iNext').onclick = () => { if (last) finishIntro(); else { introStep++; renderIntro(); } };
+  if (last) {
+    const list = () => {
+      const q = $('#iName').value.toLowerCase().trim();
+      const hits = [...G.people.values()].filter(p => !p.placeholder && isLiving(p) && (!q || displayName(p).toLowerCase().includes(q))).slice(0, 6);
+      $('#iList').innerHTML = hits.map(p => `<button data-id="${p.id}"><span>${esc(displayName(p))}</span><small>That's me</small></button>`).join('') + '<button data-id="new"><span>I’m not in the tree yet</span><small>Add me</small></button>';
+      document.querySelectorAll('#iList button').forEach(b => b.onclick = () => { if (b.dataset.id !== 'new') { STATE.viewer = b.dataset.id; STATE.focus = b.dataset.id; } finishIntro(); });
+    };
+    $('#iName').oninput = list; list();
+  }
+}
+function openIntro(step = 0) { introStep = step; renderIntro(); showPage('intro'); }
+function finishIntro() {
+  hidePage('intro');
+  try { localStorage.setItem('roots_intro_seen', '1'); } catch (e) {}
+  clearTree(); setTimeout(() => render({ camera: 'instant' }), 250);
+}
+$('#btnHelp').onclick = () => openIntro(1);
+$('#btnWhy').onclick = () => openIntro(0);
+
+/* ---- prototype options ---- */
+$('#btnMock').onclick = () => { const m = $('#mockMenu'); m.classList.toggle('on'); $('#btnMock').setAttribute('aria-expanded', m.classList.contains('on')); };
+$('#optRoots').onchange = e => { STATE.rootsBelow = e.target.checked; clearTree(); render({ camera: 'instant' }); };
+$('#optIntro').onclick = () => { $('#mockMenu').classList.remove('on'); clearTree(); openIntro(0); };
+$('#optReset').onclick = () => location.reload();
+function clearTree() { for (const r of live.values()) r.el.remove(); live.clear(); for (const r of liveEdges.values()) r.el.remove(); liveEdges.clear(); }
+
+/* ---- start ---- */
+G = buildGraph(SAMPLE);
+cam.ts = cam.s = innerWidth < 640 ? .48 : .8;
+let seen = false; try { seen = localStorage.getItem('roots_intro_seen') === '1'; } catch (e) {}
+const qs = new URLSearchParams(location.search);
+if (qs.has('nointro')) seen = true;
+if (seen) render({ camera: 'instant' }); else { render({ camera: 'instant' }); openIntro(0); }
+</script>
+</body>
+</html>
