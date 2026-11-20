@@ -64,29 +64,31 @@ button { font: inherit; color: inherit; }
 .edge.partner { stroke: var(--ink); stroke-width: 1.6; }
 .edge.partner.former { opacity: .45; }
 .edge.stem { stroke: var(--ink-soft); stroke-width: 1.4; opacity: .7; }
-.ground { stroke: var(--ink); stroke-opacity: .16; stroke-width: 1.2; }
-.ring { fill: none; stroke: var(--ink); stroke-opacity: .045; }
+.ground { stroke: var(--ink); stroke-opacity: .32; stroke-width: 1.5; }
+.soilband { fill: #A9822F; fill-opacity: .07; }
+.ring { fill: none; stroke: var(--ink); stroke-opacity: .06; }
 
 .node { position: absolute; left: 0; top: 0; will-change: transform, opacity; }
-.card { position: absolute; transform: translate(-50%, -50%); width: 180px; height: 70px; padding: 8px 12px 8px 10px; border-radius: 14px; border: 1px solid var(--line);
-  background: var(--card); display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
-  box-shadow: 0 1px 0 rgba(29, 43, 36, .04); transition: transform .25s var(--ease), box-shadow .25s var(--ease), border-color .25s; }
-.card:hover { border-color: rgba(29, 43, 36, .32); }
-.card.selected { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 10px 28px rgba(23, 36, 30, .18); border-color: var(--ink); z-index: 2; }
-.card .av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 500; background: #E2DDD0; color: var(--ink); }
+.card { position: absolute; transform: translate(-50%, -50%); width: 180px; height: 70px; padding: 8px 12px 8px 10px; border-radius: 14px; border: 1px solid rgba(232, 226, 210, .08);
+  background: var(--forest-raised); color: var(--bone); display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+  box-shadow: 0 2px 6px rgba(23, 36, 30, .18); transition: transform .25s var(--ease), box-shadow .25s var(--ease), border-color .25s; }
+.card:hover { border-color: rgba(201, 163, 90, .7); }
+.card.selected { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 12px 30px rgba(23, 36, 30, .35); border-color: var(--gilt-light); z-index: 2; }
+.card .av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 500; background: rgba(232, 226, 210, .14); color: var(--bone); }
 .card .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .card .nm { font-weight: 500; font-size: 14px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card .yr { font-size: 11.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; line-height: 1.2; }
-.card .rl { font-size: 12px; color: var(--ink-soft); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card.deceased .av { background: #E9E1CC; color: #6E5A2A; }
-.card.focus { width: 210px; height: 82px; border: 2px solid var(--gilt); background: #FFFDF8; box-shadow: 0 8px 24px rgba(169, 130, 47, .18); }
-.card.focus .av { width: 42px; height: 42px; font-size: 15px; background: var(--ink); color: var(--paper); }
+.card .yr { font-size: 11.5px; color: var(--gilt-light); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.card .rl { font-size: 12px; color: rgba(232, 226, 210, .74); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.deceased .av { background: rgba(201, 163, 90, .22); color: var(--gilt-light); }
+.card.focus { width: 210px; height: 82px; border: 2px solid var(--gilt-light); background: var(--forest); box-shadow: 0 0 0 6px rgba(201, 163, 90, .16), 0 10px 26px rgba(23, 36, 30, .3); }
+.card.focus .av { width: 42px; height: 42px; font-size: 15px; background: var(--gilt-light); color: var(--forest); }
 .card.focus .nm { font-size: 16px; }
-.card.placeholder { border: 1.5px dashed rgba(29, 43, 36, .35); background: transparent; }
-.card.placeholder .av { background: transparent; border: 1.5px dashed rgba(29, 43, 36, .35); }
-.card.pending { border: 1.5px dashed var(--gilt); background: #FBF7EC; }
+.card.placeholder { border: 1.5px dashed rgba(29, 43, 36, .5); background: rgba(238, 235, 227, .7); color: var(--ink); box-shadow: none; }
+.card.placeholder .rl { color: var(--ink-soft); }
+.card.placeholder .av { background: transparent; border: 1.5px dashed rgba(29, 43, 36, .5); color: var(--ink); }
+.card.pending { border: 1.5px dashed var(--gilt-light); background: var(--forest-raised); }
 .card .tag { position: absolute; top: -9px; right: 10px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; padding: 1px 7px; border-radius: 8px; background: var(--gilt); color: #fff; font-weight: 500; }
-.card .twice { position: absolute; bottom: -9px; right: 10px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--card); border: 1px solid var(--line); display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--ink-soft); }
+.card .twice { position: absolute; bottom: -9px; right: 10px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--forest); border: 1px solid rgba(201, 163, 90, .5); display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--bone); }
 .card .twice svg { width: 16px; height: 10px; }
 
 .bud { position: absolute; transform: translate(-50%, -50%); height: 30px; padding: 0 12px 0 8px; border-radius: 15px; border: 1px solid rgba(169, 130, 47, .55); background: #FBF6E9;
@@ -117,8 +119,11 @@ button { font: inherit; color: inherit; }
   .panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 82vh; transform: translateY(40px); }
   .panel.on { transform: none; }
 }
-.panel .head { padding: 20px 20px 14px; display: flex; gap: 14px; align-items: center; border-bottom: 1px solid var(--line); }
-.panel .head .av { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; font-weight: 500; background: #E2DDD0; flex: none; }
+.panel .head { padding: 20px 20px 16px; display: flex; gap: 14px; align-items: center; background: var(--forest); color: var(--bone); }
+.panel .head .sub { color: rgba(232, 226, 210, .72); }
+.panel .head .x { color: var(--bone); }
+.panel .head .x:hover { background: rgba(232, 226, 210, .1); }
+.panel .head .av { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; font-weight: 500; background: rgba(232, 226, 210, .16); color: var(--bone); flex: none; }
 .panel h2 { margin: 0; font-weight: 500; font-size: 21px; line-height: 1.2; text-wrap: balance; }
 .panel .sub { color: var(--ink-soft); font-size: 13.5px; margin-top: 3px; }
 .panel .x { margin-left: auto; align-self: flex-start; width: 36px; height: 36px; border-radius: 18px; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
@@ -141,6 +146,12 @@ button { font: inherit; color: inherit; }
 .photo.add::before, .photo.add::after { display: none; }
 .prov { font-size: 12.5px; color: var(--ink-soft); }
 .label { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 8px; }
+.key { display: flex; flex-direction: column; gap: 4px; }
+.key h3 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); font-weight: 500; margin: 10px 0 6px; }
+.key h3:first-child { margin-top: 0; }
+.krow { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center; padding: 6px 0; font-size: 14px; line-height: 1.35; }
+.krow svg { width: 92px; height: 34px; display: block; }
+.krow small { display: block; color: var(--ink-soft); font-size: 12.5px; }
 .twicebox { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); font-size: 13.5px; }
 .twicebox svg { width: 28px; height: 18px; flex: none; }
 
@@ -231,6 +242,7 @@ button { font: inherit; color: inherit; }
   <span class="spacer"></span>
   <button class="iconbtn" id="btnSearch" aria-label="Find a person"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><span class="lbl">Find</span></button>
   <button class="iconbtn" id="btnAll" aria-pressed="false" aria-label="Show all branches"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 21V9"/><path d="M12 13c-3 0-5-2-6-5"/><path d="M12 11c3 0 5-2 6-5"/><path d="M12 9c0-2 0-4 0-6"/></svg><span class="lbl">Show all</span></button>
+  <button class="iconbtn" id="btnKey" aria-label="What the symbols mean"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg><span class="lbl">Key</span></button>
   <button class="iconbtn" id="btnHelp" aria-label="How Roots works"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.6v.4"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg><span class="lbl">Guide</span></button>
   <button class="primary" id="btnSend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg><span>Send<span class="lbl-long"> to family</span></span></button>
 </header>
@@ -241,7 +253,7 @@ button { font: inherit; color: inherit; }
   <div id="world">
     <svg id="edges" aria-hidden="true">
       <defs>
-        <pattern id="soil" width="14" height="14" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r=".9" fill="#1D2B24" fill-opacity=".09"/><circle cx="10" cy="10" r=".7" fill="#A9822F" fill-opacity=".14"/></pattern>
+        <pattern id="soil" width="14" height="14" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r="1" fill="#1D2B24" fill-opacity=".14"/><circle cx="10" cy="10" r=".8" fill="#A9822F" fill-opacity=".28"/></pattern>
         <linearGradient id="soilfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
         <mask id="soilmask"><rect x="-6000" y="0" width="12000" height="900" fill="url(#soilfade)"/></mask>
       </defs>
@@ -271,7 +283,7 @@ button { font: inherit; color: inherit; }
 
 <div class="builtby">
   <svg viewBox="40 30 100 54" aria-hidden="true"><circle cx="70" cy="57" r="22.5" fill="none" stroke="#55625B" stroke-width="7" mask="url(#lgA)"/><circle cx="106" cy="57" r="22.5" fill="none" stroke="#55625B" stroke-width="7" mask="url(#lgB)"/></svg>
-  <span>Built by Jonny</span>
+  <span>Built by Jonny Ruzicka</span>
   <button id="btnWhy">Why I built this</button>
 </div>
 
@@ -294,7 +306,7 @@ button { font: inherit; color: inherit; }
       <g class="leafin"><path d="M70 74 C60 74 51 67 48 55 C60 54 69 61 70 74 Z" fill="#A9822F"/><path d="M70 66 C78 64 87 56 91 45 C79 44 71 52 70 66 Z" fill="#A9822F"/></g>
     </svg>
     <h1 id="thanksTitle">Thank you. It's planted.</h1>
-    <p class="lede" id="thanksBody">Jonny looks over every addition before everyone else sees it. Until then it's on your tree, marked unconfirmed.</p>
+    <p class="lede" id="thanksBody">Jonny Ruzicka looks over every addition before everyone else sees it. Until then it's on your tree, marked unconfirmed.</p>
     <div class="actions" style="justify-content:center">
       <button class="primary" id="thanksBack">Back to the tree</button>
       <button class="iconbtn" id="thanksSend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg><span class="lbl">Send to a family member</span></button>
@@ -912,7 +924,7 @@ function drawGround() {
   if (!STATE.rootsBelow) return;
   const y = FH / 2 + 26;
   document.querySelector('#soilmask rect').setAttribute('y', y);
-  groundG.innerHTML = `<rect x="-6000" y="${y}" width="12000" height="900" fill="url(#soil)" mask="url(#soilmask)"/><line class="ground" x1="-6000" x2="6000" y1="${y}" y2="${y}"/>`;
+  groundG.innerHTML = `<rect class="soilband" x="-6000" y="${y}" width="12000" height="900" mask="url(#soilmask)"/><rect x="-6000" y="${y}" width="12000" height="900" fill="url(#soil)" mask="url(#soilmask)"/><line class="ground" x1="-6000" x2="6000" y1="${y}" y2="${y}"/>`;
 }
 
 /* =====================================================================
@@ -985,14 +997,14 @@ function openPerson(id) {
     body += `<p class="story">Nobody has named this person yet. If you know who ${rel ? 'this ' + rel.toLowerCase() : 'they'} was, add what you know. Even a first name helps.</p>`;
   } else if (living) {
     body += id === STATE.viewer
-      ? `<div class="private">${ICON.lock}<span>Relatives see only your name. Your dates, places and stories stay private. Jonny can see everything.</span></div>`
+      ? `<div class="private">${ICON.lock}<span>Relatives see only your name. Your dates, places and stories stay private. Jonny Ruzicka can see everything.</span></div>`
       : `<div class="private">${ICON.lock}<span>${esc(p.first)} is living, so only their name shows here. Dates, places and stories stay private while they're alive.</span></div>`;
   } else {
     body += `<dl class="facts">${p.born ? `<dt>Born</dt><dd>${esc(String(p.born).replace('about', 'About'))}${p.bornPlace ? ', ' + esc(p.bornPlace) : ''}</dd>` : ''}${p.died ? `<dt>Died</dt><dd>${esc(p.died)}</dd>` : ''}${p.birth ? `<dt>Born as</dt><dd>${esc(p.first + ' ' + p.birth)}</dd>` : ''}</dl>`;
     if (p.notes) body += `<p class="story">${esc(p.notes)}</p>`;
   }
   if (twice) body += `<div class="twicebox">${ICON.rings}<span>Related twice: ${esc(p.first)} and ${esc(P(twice.partner).first)} both descend from ${esc(displayName(P(twice.ancestor)))}.</span></div>`;
-  if (p.pending) body += `<div class="private"><span>You added ${esc(p.first)}. Jonny hasn't confirmed this yet, so only you can see it.</span></div>`;
+  if (p.pending) body += `<div class="private"><span>You added ${esc(p.first)}. Jonny Ruzicka hasn't confirmed this yet, so only you can see it.</span></div>`;
   if (!p.placeholder) {
     const tiles = Array.from({ length: Math.min(p.photos || 0, 3) }, () => '<div class="photo" role="img" aria-label="Photo"></div>').join('');
     body += `<div><div class="label">Photos</div><div class="photos">${tiles}<button class="photo add" id="pAddPhoto">Add a photo</button></div></div>`;
@@ -1000,7 +1012,7 @@ function openPerson(id) {
   if (!p.placeholder && !living) body += `<p class="prov">Added by ${esc(p.addedBy || 'Daniel Marlow')}${p.source ? ' · Source: ' + esc(p.source) : ''}</p>`;
   const isFocus = id === STATE.focus;
   openPanel(`
-    <div class="head"><div class="av" style="${living ? '' : 'background:#E9E1CC;color:#6E5A2A'}">${initials(p)}</div>
+    <div class="head"><div class="av" style="${living ? '' : 'background:rgba(201,163,90,.25);color:#C9A35A'}">${initials(p)}</div>
       <div><h2>${esc(full)}</h2><div class="sub">${esc([rel, years(p)].filter(Boolean).join(' · '))}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <div class="body">${body}</div>
@@ -1038,7 +1050,7 @@ function readForm() {
 function openEdit(id) {
   const p = P(id);
   openPanel(`
-    <div class="head"><div><h2>${p.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">Your changes go to Jonny to confirm. Nobody's entry gets overwritten.</div></div>
+    <div class="head"><div><h2>${p.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">Your changes go to Jonny Ruzicka to confirm. Nobody's entry gets overwritten.</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <form class="body form" id="editForm">${fieldsHTML(p, p.placeholder ? null : isLiving(p))}</form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
@@ -1052,7 +1064,7 @@ function openEdit(id) {
     const tgt = P(id);
     if (tgt.placeholder) Object.assign(tgt, { placeholder: false, pending: true, first: f.first, last: f.last, born: f.born, died: f.died, notes: f.notes, living: f.living === 'living', sex: '' });
     closePanel();
-    showThanks(`Thank you. ${esc(who)} is saved.`, 'Jonny looks over every change before everyone sees it. Until then you’ll see it on your tree, marked unconfirmed.');
+    showThanks(`Thank you. ${esc(who)} is saved.`, 'Jonny Ruzicka looks over every change before everyone sees it. Until then you’ll see it on your tree, marked unconfirmed.');
     render({ camera: false });
   };
 }
@@ -1083,7 +1095,7 @@ function openAdd(id) {
     if (relKind === 'sibling') { const ps = parentsOf(id); if (ps.length) ps.forEach(pp => SAMPLE.rels.push(['pc', pp, nid, 'biological', true])); else { SAMPLE.people.push({ id: nid + 'p', placeholder: true }); SAMPLE.rels.push(['pc', nid + 'p', id], ['pc', nid + 'p', nid, 'biological', true]); } }
     G = buildGraph(SAMPLE);
     closePanel();
-    showThanks(`Thank you. ${esc(person.first)} is planted.`, `Jonny looks over every addition before everyone sees it. Until then ${esc(person.first)} shows on your tree, marked unconfirmed.`);
+    showThanks(`Thank you. ${esc(person.first)} is planted.`, `Jonny Ruzicka looks over every addition before everyone sees it. Until then ${esc(person.first)} shows on your tree, marked unconfirmed.`);
     pendingGrow = true;
   };
 }
@@ -1138,6 +1150,47 @@ function openSearch() {
 }
 $('#btnSearch').onclick = openSearch;
 
+/* ---- key: every symbol and line, drawn the way the tree draws it ---- */
+function keyCard(opts = {}) {
+  const fill = opts.fill || '#23362C', stroke = opts.stroke || 'none', dash = opts.dash ? ` stroke-dasharray="${opts.dash}"` : '';
+  const txt = opts.text || '#E8E2D2';
+  return `<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="${opts.wide ? 4 : 10}" y="3" width="${opts.wide ? 84 : 72}" height="28" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="${opts.sw || 1.5}"${dash}/>
+    <circle cx="${opts.wide ? 18 : 23}" cy="17" r="7" fill="${opts.av || 'rgba(232,226,210,.16)'}"${opts.avDash ? ' stroke="#1D2B24" stroke-opacity=".5" stroke-width="1.2" stroke-dasharray="2 2"' : ''}/>
+    <rect x="${opts.wide ? 30 : 35}" y="11" width="34" height="4" rx="2" fill="${txt}"/><rect x="${opts.wide ? 30 : 35}" y="19" width="${opts.yr ? 20 : 24}" height="3" rx="1.5" fill="${opts.yr ? '#C9A35A' : txt}" fill-opacity=".7"/>
+    ${opts.tag ? '<rect x="52" y="0" width="30" height="7" rx="3.5" fill="#A9822F"/>' : ''}</svg>`;
+}
+function keyLine(d, opts = {}) {
+  return `<svg viewBox="0 0 92 34" aria-hidden="true"><path d="${d}" fill="none" stroke="${opts.color || '#1D2B24'}" stroke-width="${opts.w || 2.4}" stroke-linecap="round"${opts.dash ? ` stroke-dasharray="${opts.dash}"` : ''}${opts.op ? ` stroke-opacity="${opts.op}"` : ''}/>${opts.extra || ''}</svg>`;
+}
+const RINGS_MARK = (x, y, op = 1) => `<g transform="translate(${x} ${y})" opacity="${op}"><circle r="5" cx="-3.5" fill="#EEEBE3" stroke="#1D2B24" stroke-width="1.5"/><circle r="5" cx="3.5" fill="none" stroke="#1D2B24" stroke-width="1.5"/></g>`;
+function openKey() {
+  const row = (art, title, note) => `<div class="krow">${art}<div>${title}${note ? `<small>${note}</small>` : ''}</div></div>`;
+  openPanel(`
+    <div class="head"><div><h2>What the symbols mean</h2><div class="sub">Everything on the tree, in one place.</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body key">
+      <h3>People</h3>
+      ${row(keyCard({ fill: '#17241E', stroke: '#C9A35A', sw: 2, av: '#C9A35A' }), 'The person the tree is centered on', 'Tap anyone, then "Center the tree" to move the center.')}
+      ${row(keyCard({ yr: true, av: 'rgba(201,163,90,.3)' }), 'Someone who has passed', 'Gold years, born and died. Tap for their story and photos.')}
+      ${row(keyCard(), 'Someone living', 'No dates. Only their name shows; their details stay private.')}
+      ${row(keyCard({ stroke: '#C9A35A', dash: '4 3', tag: true }), 'Unconfirmed', 'Something you added. Only you see it until Jonny Ruzicka confirms it.')}
+      ${row(keyCard({ fill: 'rgba(238,235,227,.7)', stroke: '#1D2B24', dash: '3 3', text: '#1D2B24', av: 'none', avDash: true }), 'Unknown person', 'We know someone was here but not their name. Tap to fill it in.')}
+      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="4" y="5" width="84" height="24" rx="12" fill="#FBF6E9" stroke="#A9822F" stroke-opacity=".55"/><path d="M18 24v-6M18 18c-3 0-4.5-2-4.5-5 3 0 4.5 2 4.5 5zM18 18c3 0 4.5-2 4.5-5-3 0-4.5 2-4.5 5z" fill="none" stroke="#A9822F" stroke-width="1.4" stroke-linecap="round"/><rect x="28" y="15" width="44" height="4" rx="2" fill="#1D2B24" fill-opacity=".7"/></svg>`, 'A folded branch', 'More relatives live here. Tap the bud to open it; tap the small minus on the card to fold it again.')}
+      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="16" y="9" width="60" height="16" rx="8" fill="#17241E" stroke="#C9A35A" stroke-opacity=".5"/><g transform="translate(29 17) scale(.5)"><circle r="9" cx="-6" fill="none" stroke="#A9822F" stroke-width="3"/><circle r="9" cx="6" fill="none" stroke="#A9822F" stroke-width="3"/></g><rect x="40" y="15" width="26" height="4" rx="2" fill="#E8E2D2"/></svg>`, 'Related twice', 'Two people who married and also share an ancestor, like second cousins.')}
+      <h3>Lines</h3>
+      ${row(keyLine('M46 31 C46 18 46 16 46 3'), 'Parent to child', 'Branches above the ground line lead to children and grandchildren.')}
+      ${row(keyLine('M46 3 C46 16 46 18 46 31', { color: '#A9822F' }), 'Roots', 'Gold lines below the ground line lead back to parents, grandparents and further.')}
+      ${row(keyLine('M46 31 C46 18 46 16 46 3', { op: .45 }), 'Half sibling', 'A lighter line: they share one parent, not both.')}
+      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4' }), 'Unconfirmed or unknown link', 'Dotted: it leads to someone unconfirmed or unknown.')}
+      ${row(keyLine('M6 17 H86', { w: 1.6, extra: RINGS_MARK(46, 17) }), 'Married or partners', 'Their children grow out of the rings.')}
+      ${row(keyLine('M6 17 H86', { w: 1.6, dash: '5 5', op: .45, extra: RINGS_MARK(46, 17, .4) }), 'Former partners', 'Divorced or separated. Their children still connect to both.')}
+      ${row(keyLine('M8 17 H84', { w: 1.4, dash: '3 4', color: '#55625B' }), 'Bud stem', 'Connects a folded branch to the person it belongs to.')}
+      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="0" y="17" width="92" height="17" fill="#A9822F" fill-opacity=".08"/><line x1="0" x2="92" y1="17" y2="17" stroke="#1D2B24" stroke-opacity=".32" stroke-width="1.5"/></svg>`, 'The ground line', 'The centered person stands on it: roots below, branches above.')}
+    </div>`);
+  $('#pClose').onclick = closePanel;
+}
+$('#btnKey').onclick = openKey;
+
 $('#btnAll').onclick = () => { STATE.all = !STATE.all; $('#btnAll').setAttribute('aria-pressed', STATE.all); if (!STATE.all) STATE.open.clear(); render({ camera: false }); };
 
 /* ---- intro ---- */
@@ -1146,14 +1199,15 @@ const INTRO = [
     <svg viewBox="4 8 216 112" style="width:180px;height:auto" aria-hidden="true">${document.querySelector('.topbar .logo').innerHTML}</svg>
     <h1>Welcome to our family tree.</h1>
     <p class="lede">Why I built this</p>
-    <p class="placeholder-copy">[Jonny's story goes here: why this tree, who it's for, and the people we've lost whose names shouldn't disappear with them. A few short paragraphs in his own words.]</p>
-    <p class="sig">Jonny</p>`,
+    <p class="placeholder-copy">[Jonny Ruzicka's story goes here: why this tree, who it's for, and the people we've lost whose names shouldn't disappear with them. A few short paragraphs in his own words.]</p>
+    <p class="sig">Jonny Ruzicka</p>`,
   () => `
     <h1>How it works</h1>
     <ul class="howto">
       <li><span class="ic">${ICON.bud.replace('currentColor', '#A9822F')}</span><div><b>Tap anyone to see their story.</b><span>Names, dates and memories for those who've passed. Living relatives show by name only.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it, or use Show all.</span></div></li>
-      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><b>Add who you know.</b><span>Especially the relatives we've lost. A first name is enough to start. Jonny confirms each addition.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><b>Add who you know.</b><span>Especially the relatives we've lost. A first name is enough to start. Jonny Ruzicka confirms each addition.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></span><div><b>Not sure what a line means?</b><span>Tap Key at the top for every symbol and line type.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
     </ul>`,
   () => `
