@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 8 216 112" width="432" height="224" role="img" aria-label="Roots"><title>Roots</title><path d="M14 32 V82" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M14 50 C14 38 24 32 40 32" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<defs><mask id="rk1a" maskUnits="userSpaceOnUse" x="33.5" y="20.5" width="109.0" height="73.0"><rect x="33.5" y="20.5" width="109.0" height="73.0" fill="#fff"/><path d="M83.50 57.00 A22.5 22.5 0 0 1 106.00 34.50" fill="none" stroke="#000" stroke-width="9.8"/></mask><mask id="rk1b" maskUnits="userSpaceOnUse" x="33.5" y="20.5" width="109.0" height="73.0"><rect x="33.5" y="20.5" width="109.0" height="73.0" fill="#fff"/><path d="M92.50 57.00 A22.5 22.5 0 0 1 70.00 79.50" fill="none" stroke="#000" stroke-width="9.8"/></mask></defs>
+<circle cx="70" cy="57" r="22.5" fill="none" stroke="#1D2B24" stroke-width="7" mask="url(#rk1a)"/>
+<circle cx="106" cy="57" r="22.5" fill="none" stroke="#1D2B24" stroke-width="7" mask="url(#rk1b)"/>
+<path d="M153 84 C153 96 150 104 142 112" fill="none" stroke="#A9822F" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M152 94 C155 100 161 103 168 104" fill="none" stroke="#A9822F" stroke-width="3.15" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M153 18 V82" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M142 34 H164" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M210.0 39.7 C206.0 33.9 201.0 32.0 194.0 32.0 C184.0 32.0 178.0 36.8 178.0 44.5 C178.0 52.2 185.0 55.1 194.0 57.0 C203.0 58.9 210.0 61.8 210.0 69.5 C210.0 77.2 203.0 82.0 194.0 82.0 C187.0 82.0 181.0 79.1 178.0 74.3" fill="none" stroke="#1D2B24" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
