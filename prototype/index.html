@@ -34,10 +34,6 @@
 html, body { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 15px; overflow: hidden; -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; }
-body[data-bg="stone"] { --bg: #DBD4C5; }
-body[data-bg="fog"] { --bg: #D5D9DA; }
-body[data-bg="paper"] { --bg: #EEEBE3; }
-body { transition: background-color .4s var(--ease); }
 :focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }
 
 /* ---------- top bar ---------- */
@@ -281,8 +277,6 @@ body { transition: background-color .4s var(--ease); }
   <div class="menu" id="mockMenu">
     <b>Prototype options</b>
     <label><input type="checkbox" id="optRoots" checked> Ancestors as roots, below the ground line</label>
-    <div class="field"><span class="lab">Background</span><div class="seg" id="optBg">
-      <button type="button" data-v="sage" aria-pressed="true">Sage</button><button type="button" data-v="stone" aria-pressed="false">Stone</button><button type="button" data-v="fog" aria-pressed="false">Fog</button><button type="button" data-v="paper" aria-pressed="false">Paper</button></div></div>
     <button id="optIntro">Replay the first-visit intro</button>
     <button id="optReset">Reset the sample tree</button>
   </div>
@@ -873,7 +867,8 @@ function drawEdge(r) {
     const [x1, y1, x2, y2] = fromParent ? [ax, parentEdgeY, c.x, childEdgeY] : [c.x, childEdgeY, ax, parentEdgeY];
     const my = (y1 + y2) / 2;
     d = `M${x1} ${y1} C${x1} ${my} ${x2} ${my} ${x2} ${y2}`;
-    const isRoot = STATE.rootsBelow ? (Math.max(ay, c.y) > 0.5 * ROW && ay > c.y) : false;
+    const parentGen = (STATE.rootsBelow ? ay : -ay) / ROW;
+    const isRoot = parentGen > 0.5;
     const gen = Math.max(Math.abs(Math.round(ay / ROW)), Math.abs(Math.round(c.y / ROW)));
     cls += isRoot ? ' root' : ' branch';
     el.style.strokeWidth = Math.max(1.3, 3.4 - gen * 0.55);
@@ -1186,14 +1181,14 @@ function openKey() {
       ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="4" y="5" width="84" height="24" rx="12" fill="#FBF6E9" stroke="#A9822F" stroke-opacity=".55"/><path d="M18 24v-6M18 18c-3 0-4.5-2-4.5-5 3 0 4.5 2 4.5 5zM18 18c3 0 4.5-2 4.5-5-3 0-4.5 2-4.5 5z" fill="none" stroke="#A9822F" stroke-width="1.4" stroke-linecap="round"/><rect x="28" y="15" width="44" height="4" rx="2" fill="#1D2B24" fill-opacity=".7"/></svg>`, 'A folded branch', 'More relatives live here. Tap the bud to open it; tap the small minus on the card to fold it again.')}
       ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="16" y="9" width="60" height="16" rx="8" fill="#FFFDF9" stroke="#1D2B24" stroke-opacity=".2"/><g transform="translate(29 17) scale(.5)"><circle r="9" cx="-6" fill="none" stroke="#A9822F" stroke-width="3"/><circle r="9" cx="6" fill="none" stroke="#A9822F" stroke-width="3"/></g><rect x="40" y="15" width="26" height="4" rx="2" fill="#4A564F"/></svg>`, 'Related twice', 'Two people who married and also share an ancestor, like second cousins.')}
       <h3>Lines</h3>
-      ${row(keyLine('M46 31 C46 18 46 16 46 3'), 'Parent to child', 'Branches above the ground line lead to children and grandchildren.')}
-      ${row(keyLine('M46 3 C46 16 46 18 46 31', { color: '#A9822F' }), 'Roots', 'Gold lines below the ground line lead back to parents, grandparents and further.')}
+      ${row(keyLine('M46 3 C46 16 46 18 46 31'), 'Parent to child', STATE.rootsBelow ? 'Ink branches above the ground line lead to children and grandchildren.' : 'Ink lines lead down to children and grandchildren.')}
+      ${row(keyLine('M46 31 C46 18 46 16 46 3', { color: '#A9822F' }), 'Your roots', STATE.rootsBelow ? 'Gold lines below the ground line lead back to parents, grandparents and further.' : 'Gold lines lead up to parents, grandparents and further back.')}
       ${row(keyLine('M46 31 C46 18 46 16 46 3', { op: .45 }), 'Half sibling', 'A lighter line: they share one parent, not both.')}
       ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4' }), 'Unconfirmed or unknown link', 'Dotted: it leads to someone unconfirmed or unknown.')}
       ${row(keyLine('M6 17 H86', { w: 1.6, extra: RINGS_MARK(46, 17) }), 'Married or partners', 'Their children grow out of the rings.')}
       ${row(keyLine('M6 17 H86', { w: 1.6, dash: '5 5', op: .45, extra: RINGS_MARK(46, 17, .4) }), 'Former partners', 'Divorced or separated. Their children still connect to both.')}
       ${row(keyLine('M8 17 H84', { w: 1.4, dash: '3 4', color: '#55625B' }), 'Bud stem', 'Connects a folded branch to the person it belongs to.')}
-      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="0" y="17" width="92" height="17" fill="#6B5524" fill-opacity=".09"/><line x1="0" x2="92" y1="17" y2="17" stroke="#1D2B24" stroke-opacity=".32" stroke-width="1.5"/></svg>`, 'The ground line', 'The centered person stands on it: roots below, branches above.')}
+      ${STATE.rootsBelow ? row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="0" y="17" width="92" height="17" fill="#6B5524" fill-opacity=".09"/><line x1="0" x2="92" y1="17" y2="17" stroke="#1D2B24" stroke-opacity=".32" stroke-width="1.5"/></svg>`, 'The ground line', 'The centered person stands on it: roots below, branches above.') : ''}
     </div>`);
   $('#pClose').onclick = closePanel;
 }
@@ -1256,10 +1251,6 @@ $('#btnWhy').onclick = () => openIntro(0);
 
 /* ---- prototype options ---- */
 $('#btnMock').onclick = () => { const m = $('#mockMenu'); m.classList.toggle('on'); $('#btnMock').setAttribute('aria-expanded', m.classList.contains('on')); };
-document.querySelectorAll('#optBg button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('#optBg button').forEach(x => x.setAttribute('aria-pressed', x === b));
-  document.body.dataset.bg = b.dataset.v;
-});
 $('#optRoots').onchange = e => { STATE.rootsBelow = e.target.checked; clearTree(); render({ camera: 'instant' }); };
 $('#optIntro').onclick = () => { $('#mockMenu').classList.remove('on'); clearTree(); openIntro(0); };
 $('#optReset').onclick = () => location.reload();
