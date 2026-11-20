@@ -1,0 +1,29 @@
+
+/* ---------- live page additions ---------- */
+.state { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; text-align: center; z-index: 12; padding: 24px; pointer-events: none; }
+.state > * { pointer-events: auto; }
+.state[hidden] { display: none; }
+.state h2 { margin: 0; font-weight: 500; font-size: 26px; }
+.state p { margin: 0; max-width: 34ch; color: var(--ink-soft); line-height: 1.5; font-family: var(--font-story); font-size: 18px; }
+.banner { position: fixed; left: 50%; top: 66px; transform: translateX(-50%); z-index: 14; font-size: 13px; padding: 6px 14px; border-radius: 14px; white-space: nowrap; }
+.banner[hidden] { display: none; }
+.banner.owner { background: var(--ink); color: #FFFDF9; }
+.banner.owner a { color: var(--gilt-light); margin-left: 8px; }
+.banner.paused { background: #FFF6E0; border: 1px solid rgba(169, 130, 47, .5); color: var(--ink); top: 100px; }
+.formerr { margin: 0; padding: 10px 12px; border-radius: 10px; background: #FBE9E4; color: #7A2E1D; font-size: 14px; }
+.formerr[hidden] { display: none; }
+.dups { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-soft); }
+.dups:empty { display: none; }
+.dups > span { flex: 1 1 100%; }
+.dups button { display: flex; flex-direction: column; align-items: flex-start; padding: 6px 10px; border-radius: 10px; border: 1px solid rgba(169, 130, 47, .5); background: #FFF9EC; cursor: pointer; font-size: 13px; text-align: left; }
+.dups button small { color: var(--ink-soft); font-size: 11.5px; }
+.dups .linked { background: #FFF6E0; padding: 6px 10px; border-radius: 10px; color: var(--ink); }
+.dups .linked button { display: inline; padding: 0 4px; border: 0; background: none; text-decoration: underline; font-size: 12.5px; }
+.photo.real { display: block; background: #E7E4DA; }
+.photo.real::before, .photo.real::after { display: none; }
+.photo.real img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.story.muted { color: var(--ink-soft); font-size: 15.5px; }
+.panel select { font: inherit; font-size: 15px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(29, 43, 36, .2); background: #fff; color: var(--ink); width: 100%; }
+.seg button:disabled { opacity: .4; cursor: not-allowed; }
+button:disabled { opacity: .55; cursor: progress; }
+@media (max-width: 640px) { .banner { top: 62px; white-space: normal; text-align: center; max-width: calc(100% - 24px); } .banner.paused { top: 100px; } }

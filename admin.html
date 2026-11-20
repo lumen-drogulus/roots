@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Roots approvals</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/logo/roots-icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400&display=swap">
+<link rel="stylesheet" href="assets/admin.css">
+</head>
+<body>
+<header class="bar">
+  <img src="assets/logo/roots-wordmark.svg" alt="Roots" class="logo">
+  <span class="title">Approvals</span>
+  <span class="spacer"></span>
+  <span class="actions" id="actions" hidden>
+    <button class="btn" id="btnPause" aria-pressed="false">Pause adding</button>
+    <a class="btn" href="index.html">Open the tree</a>
+    <button class="btn quiet" id="btnLock">Lock this device</button>
+  </span>
+</header>
+
+<main>
+  <section class="gate" id="gate">
+    <h1>Owner sign-in</h1>
+    <p>Enter the admin key from the Apps Script log. It stays on this device only. Anyone with the key can approve entries, so keep it private.</p>
+    <form id="gateForm" class="gateform">
+      <label for="keyInput">Admin key</label>
+      <input id="keyInput" type="password" autocomplete="current-password" spellcheck="false">
+      <button class="btn primary" type="submit">Unlock</button>
+      <p class="err" id="gateErr" role="alert" hidden></p>
+    </form>
+  </section>
+
+  <section id="app" hidden>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tabQueue" aria-selected="true">Waiting <span id="qCount" class="count"></span></button>
+      <button role="tab" id="tabPeople" aria-selected="false">Everyone</button>
+    </nav>
+    <div id="queue" role="tabpanel" aria-labelledby="tabQueue"></div>
+    <div id="people" role="tabpanel" aria-labelledby="tabPeople" hidden></div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="config.js"></script>
+<script src="assets/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,378 @@
+/* =====================================================================
+ * Pop-out person panel
+ * ===================================================================== */
+const panel = $('#panel'), scrim = $('#scrim');
+function openPanel(html) { panel.innerHTML = html; panel.classList.add('on'); if (innerWidth <= 700) scrim.classList.add('on'); }
+function closePanel() { panel.classList.remove('on'); scrim.classList.remove('on'); formDirty = false; currentSave = null; if (STATE.selected) { STATE.selected = null; refreshCards(); } }
+let formDirty = false, currentSave = null, sessionAdded = [], saving = false;
+function guardClose(onDiscard) {
+  if (saving) return;
+  if (panel.classList.contains('on') && formDirty && currentSave) {
+    if (panel.querySelector('.guard')) return;
+    const g = document.createElement('div');
+    g.className = 'guard';
+    g.innerHTML = '<b>Save what you typed?</b><button class="iconbtn" id="gDiscard">Discard</button><button class="iconbtn" id="gKeep">Keep editing</button><button class="primary" id="gSave">Save</button>';
+    panel.querySelector('.foot').prepend(g);
+    $('#gDiscard').onclick = () => { clearDraft(); formDirty = false; if (onDiscard) onDiscard(); else { closePanel(); batchThanks(); } };
+    $('#gKeep').onclick = () => g.remove();
+    $('#gSave').onclick = () => { g.remove(); currentSave(); };
+    return;
+  }
+  if (onDiscard && panel.classList.contains('on') && currentSave) { onDiscard(); return; }
+  closePanel(); batchThanks();
+}
+scrim.onclick = () => guardClose();
+function refreshCards() { for (const [id, r] of live) if (r.node && r.node.kind === 'person') updateNodeEl(r, r.node); }
+
+function photoURL(fileId, w) { return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${w}`; }
+
+function openPerson(id) {
+  STATE.selected = id; refreshCards();
+  const p = P(id), living = isLiving(p), rel = relation(id), twice = connectedTwice(id);
+  const name = p.placeholder ? 'Unknown' : displayName(p);
+  const full = living || p.placeholder ? name : [p.first, p.middle, p.last].filter(Boolean).join(' ') + (p.birth ? ` (born ${p.birth})` : '');
+  let body = '';
+  if (p.placeholder) {
+    body += `<p class="story">Nobody has named this person yet. If you know who ${rel ? 'this ' + rel.toLowerCase() : 'they'} ${living ? 'is' : 'was'}, fill in what you know. Even a first name helps.</p>`;
+  } else if (living && !p.pending) {
+    body += id === STATE.viewer
+      ? `<div class="private">${ICON.lock}<span>Relatives see only your name. Your dates, places and stories stay private. ${OWNER_NAME} can see everything.</span></div>`
+      : `<div class="private">${ICON.lock}<span>${esc(p.first)} is living, so only their name shows here. Dates, places and stories stay private while they're alive.</span></div>`;
+  } else {
+    const facts = [];
+    if (p.bornRaw || p.bornPlace) facts.push(`<dt>Born</dt><dd>${esc([fuzzyLong(p.bornRaw), p.bornPlace].filter(Boolean).join(', '))}</dd>`);
+    if (p.diedRaw || p.diedPlace) facts.push(`<dt>Died</dt><dd>${esc([fuzzyLong(p.diedRaw), p.diedPlace].filter(Boolean).join(', '))}</dd>`);
+    if (p.birth) facts.push(`<dt>Born as</dt><dd>${esc(p.first + ' ' + p.birth)}</dd>`);
+    if (p.nicknames) facts.push(`<dt>Known as</dt><dd>${esc(p.nicknames)}</dd>`);
+    if (facts.length) body += `<dl class="facts">${facts.join('')}</dl>`;
+    if (p.notes) body += `<p class="story">${esc(p.notes)}</p>`;
+    if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
+  }
+  if (twice) body += `<div class="twicebox">${ICON.rings}<span>Related twice: ${esc(p.first)} and ${esc(P(twice.partner).first)} both descend from ${esc(displayName(P(twice.ancestor)))}.</span></div>`;
+  if (p.pending) body += `<div class="private"><span>You added ${esc(p.first || 'this')}. ${OWNER_NAME} hasn't confirmed it yet, so only you can see it.</span></div>`;
+  if (!p.placeholder && !p.pending) {
+    const ph = PHOTOS.get(id) || [];
+    const tiles = ph.slice(0, 6).map(f => `<a class="photo real" href="${photoURL(f.file_id, 1600)}" target="_blank" rel="noopener" title="${esc(f.caption || 'Photo')}"><img src="${photoURL(f.file_id, 400)}" alt="${esc(f.caption || 'Photo of ' + p.first)}" loading="lazy"></a>`).join('');
+    body += `<div><div class="label">Photos</div><div class="photos">${tiles}<button class="photo add" id="pAddPhoto">Add a photo</button></div></div>`;
+  }
+  if (!p.placeholder && !living && p.addedBy) body += `<p class="prov">Added by ${esc(p.addedBy)}${p.source ? ' · Source: ' + esc(p.source) : ''}</p>`;
+  const isFocus = id === STATE.focus;
+  const canClaim = !STATE.viewer && !p.placeholder && living;
+  openPanel(`
+    <div class="head"><div class="av"${living ? '' : ' style="background:#F1E7CF;color:#7A5D1E"'}>${initials(p)}</div>
+      <div><h2>${esc(full)}</h2><div class="sub">${esc([rel, years(p)].filter(Boolean).join(' · '))}</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body">${body}</div>
+    <div class="foot">
+      ${isFocus ? '' : `<button class="primary" id="pCenter">Center the tree on ${esc(p.placeholder ? 'them' : p.first)}</button>`}
+      <button class="iconbtn" id="pAdd">Add a relative</button>
+      ${p.pending ? '' : `<button class="iconbtn" id="pEdit">${p.placeholder ? 'Fill in' : 'Edit'}</button>`}
+      ${canClaim ? '<button class="iconbtn" id="pMe">This is me</button>' : ''}
+    </div>`);
+  $('#pClose').onclick = closePanel;
+  if (!isFocus) $('#pCenter').onclick = () => { closePanel(); STATE.focus = id; render(); };
+  $('#pAdd').onclick = () => openAdd(id);
+  if ($('#pEdit')) $('#pEdit').onclick = () => openEdit(id);
+  if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);
+  const ap = $('#pAddPhoto'); if (ap) ap.onclick = () => toast('Adding photos is coming soon.');
+}
+
+/* =====================================================================
+ * Forms: add, edit, "this is me"
+ * ===================================================================== */
+const myName = () => store.get('roots_display_name') || '';
+function whoField() {
+  if (STATE.viewer || ADMIN_KEY) return '';
+  return `<div class="field"><label for="fWho">Your name, so ${OWNER_NAME} knows who sent this</label><input id="fWho" value="${esc(myName())}" autocomplete="name" placeholder="For example: Linda, Carol's cousin"></div>`;
+}
+function livingSeg(v) {
+  return `<div class="field"><span class="lab">Are they living?</span><div class="seg" id="fLiving">
+    <button type="button" data-v="living" aria-pressed="${v === 'living'}">Living</button><button type="button" data-v="deceased" aria-pressed="${v === 'deceased'}">Passed away</button><button type="button" data-v="unknown" aria-pressed="${v === 'unknown'}">Not sure</button></div></div>`;
+}
+function fieldsHTML(p, livingV, opts = {}) {
+  const lastLabel = opts.edit ? 'Last name at birth' : 'Last name';
+  return `
+    <div class="row2"><div class="field"><label for="fFirst">First name</label><input id="fFirst" value="${esc(p.first || '')}" autocomplete="off"><div class="dups" id="dups"></div></div>
+      <div class="field"><label for="fLast">${lastLabel}</label><input id="fLast" value="${esc(opts.edit ? (p.birthSurname || p.last || '') : (p.last || ''))}" autocomplete="off"></div></div>
+    ${livingSeg(livingV)}
+    <div class="row2"><div class="field"><label for="fBorn">Born</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1932, about 1932, May 14, 1932"></div>
+      <div class="field"><label for="fDied">Died</label><input id="fDied" value="${esc(fuzzyToText(p.diedRaw))}" placeholder="Year or date"></div></div>
+    <div class="field"><label for="fPlace">Where were they born?</label><input id="fPlace" value="${esc(p.bornPlace || '')}" placeholder="&quot;Cleveland&quot; or &quot;somewhere in Ohio&quot; is fine"></div>
+    <div class="field"><label for="fNotes">Anything you remember</label><textarea id="fNotes" placeholder="A job, a habit, a story they told">${esc(p.notes || '')}</textarea></div>
+    <div class="field"><label for="fSource">How do you know?</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(opts.edit ? '' : (p.source || ''))}"></div>
+    ${whoField()}
+    <p class="formerr" id="formErr" role="alert" hidden></p>
+    <p class="hint">Only a name is needed. "Unknown" counts as a name. Living people show first and last name only; everything else stays private.</p>`;
+}
+function wireSeg(id, onChange) {
+  document.querySelectorAll('#' + id + ' button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#' + id + ' button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    if (onChange) onChange(b.dataset.v);
+  });
+}
+const segVal = id => ((document.querySelector('#' + id + ' [aria-pressed="true"]') || {}).dataset || {}).v;
+function watchForm(kind, anchor, extra = {}) {
+  formDirty = false;
+  const form = panel.querySelector('form.form');
+  const keep = () => {
+    formDirty = true;
+    store.set('roots_draft', JSON.stringify({ kind, anchor, rel: segVal('fRel') || null, self: !!extra.self, fields: readForm() }));
+  };
+  form.addEventListener('input', keep);
+  form.addEventListener('click', e => { if (e.target.closest('.seg button')) keep(); });
+}
+function clearDraft() { store.del('roots_draft'); }
+function fillForm(f) {
+  const set = (id, v) => { const el = $('#' + id); if (el && v) el.value = v; };
+  set('fFirst', f.first); set('fLast', f.last); set('fBorn', f.born); set('fDied', f.died); set('fPlace', f.bornPlace); set('fNotes', f.notes); set('fSource', f.source);
+  document.querySelectorAll('#fLiving button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === f.living));
+}
+function readForm() {
+  const v = id => (($('#' + id) || {}).value || '').trim();
+  return { first: v('fFirst'), last: v('fLast'), born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
+}
+function formError(msg) { const e = $('#formErr'); if (!e) { toast(msg); return; } e.textContent = msg; e.hidden = !msg; if (msg) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+function busy(on, label) {
+  saving = on;
+  panel.querySelectorAll('.foot button').forEach(b => { b.disabled = on; });
+  const s = $('#pSave'); if (s) { if (on) { s.dataset.label = s.textContent; s.textContent = label || 'Saving…'; } else if (s.dataset.label) s.textContent = s.dataset.label; }
+}
+function personData(f) {
+  const d = { first_name: f.first || (f.last ? '' : 'Unknown'), living: f.living };
+  if (f.last) d.birth_surname = f.last;
+  d.birth_date = toFuzzy(f.born, 'Born');
+  d.death_date = toFuzzy(f.died, 'Died');
+  if (f.bornPlace) d.birth_place = f.bornPlace;
+  if (f.notes) d.notes = f.notes;
+  if (f.died && f.living === 'unknown') d.living = 'deceased';
+  return d;
+}
+async function submit(items, f) {
+  if (f && f.who) store.set('roots_display_name', f.who);
+  return api({ action: 'submit', display_name: (f && f.who) || myName() || undefined, items });
+}
+function batchThanks() {
+  if (!sessionAdded.length) return;
+  const n = sessionAdded.length, first = sessionAdded[0];
+  sessionAdded = [];
+  const live = !!ADMIN_KEY;
+  showThanks(n > 1 ? `Thank you. ${n} people planted.` : `Thank you. ${esc(first)} is planted.`,
+    live ? 'Owner mode: it went live right away.'
+      : `${OWNER_NAME} looks over every addition before everyone sees it. Until then ${n > 1 ? 'they show' : first + ' shows'} on your tree, marked unconfirmed.`);
+}
+
+/* Duplicate check: as a name is typed, offer people already in the tree. */
+function wireDupCheck(onPick) {
+  const first = $('#fFirst'), last = $('#fLast'), box = $('#dups');
+  if (!first || !box) return;
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z]/g, '');
+  const check = () => {
+    const f = norm(first.value), l = norm(last && last.value);
+    if (f.length < 2) { box.innerHTML = ''; return; }
+    const hits = [...G.people.values()].filter(p => !p.placeholder && norm(p.first).startsWith(f) &&
+      (!l || [p.last, p.birth, p.birthSurname, ...(p.married || [])].some(x => norm(x) === l))).slice(0, 3);
+    box.innerHTML = hits.length ? `<span>Already in the tree?</span>` + hits.map(p => `<button type="button" data-id="${p.id}">${esc(displayName(p))}<small>${esc([relation(p.id), years(p)].filter(Boolean).join(' · '))}</small></button>`).join('') : '';
+    box.querySelectorAll('button').forEach(b => b.onclick = () => onPick(b.dataset.id));
+  };
+  first.addEventListener('input', check); if (last) last.addEventListener('input', check);
+}
+
+function openEdit(id, restore) {
+  const p = P(id);
+  const lv = p.placeholder ? 'unknown' : p.livingRaw || (isLiving(p) ? 'living' : 'deceased');
+  openPanel(`
+    <div class="head"><div><h2>${p.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">${ADMIN_KEY ? 'Owner mode: changes go live right away.' : `Your changes go to ${OWNER_NAME} to confirm. Nobody's entry gets overwritten.`}</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <form class="body form" id="editForm" novalidate>${fieldsHTML(p, lv, { edit: true })}</form>
+    <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
+  wireSeg('fLiving');
+  if (restore) fillForm(restore.fields);
+  watchForm('edit', id);
+  if (restore) formDirty = true;
+  $('#pClose').onclick = () => guardClose(); $('#pBack').onclick = () => guardClose(() => openPerson(id));
+  $('#editForm').onsubmit = e => { e.preventDefault(); currentSave(); };
+  $('#pSave').onclick = currentSave = async () => {
+    const f = readForm();
+    let changes;
+    try {
+      const was = { first_name: p.placeholder ? '' : p.first, birth_surname: p.birthSurname || p.last || '', living: lv,
+        birth_date: p.bornRaw || '', death_date: p.diedRaw || '', birth_place: p.bornPlace || '', notes: p.notes || '' };
+      const now = { first_name: f.first, birth_surname: f.last, living: f.living, birth_date: toFuzzy(f.born, 'Born'),
+        death_date: toFuzzy(f.died, 'Died'), birth_place: f.bornPlace, notes: f.notes };
+      changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))
+        .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: now[k], source: f.source }));
+      if (p.placeholder && (f.first || f.last)) changes.push({ kind: 'suggestion', target_id: id, field: 'is_placeholder', value: false, source: f.source });
+    } catch (err) { formError(err.message); return; }
+    if (!changes.length) { formError("Nothing has changed yet."); return; }
+    formError(''); busy(true);
+    try { await submit(changes, f); }
+    catch (err) { busy(false); formError(err.message); return; }
+    busy(false); clearDraft(); closePanel();
+    const who = f.first || p.first || 'it';
+    showThanks(`Thank you. Your changes to ${esc(who)} are saved.`, ADMIN_KEY ? 'Owner mode: they went live right away.'
+      : `${OWNER_NAME} looks over every change before everyone sees it. Both versions stay on record, with who said each.`);
+    reload();
+  };
+}
+
+/* opts: { rel, fields, self } ; anchor may be null when the tree is empty (adding yourself first). */
+function openAdd(id, opts = {}) {
+  const p = id ? P(id) : null;
+  const self = !!opts.self;
+  const rel = opts.rel || (self ? 'child' : 'child');
+  const done = sessionAdded.length;
+  const relWord = p ? (self ? 'You are ' : 'They are ') + esc(p.first || 'this person') + "'s" : '';
+  const parents = p ? parentsOf(p.id) : [];
+  openPanel(`
+    <div class="head"><div><h2>${self ? 'Add yourself' : `Add someone to ${esc(p.placeholder ? 'this branch' : p.first + "'s branch")}`}</h2>
+      <div class="sub">${done ? `${done} saved so far. Keep going, or tap Save on the last one.` : self ? 'Start with your name. You can add more later.' : 'Add who you know, including relatives who have died.'}</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <form class="body form" id="addForm" novalidate>
+      ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
+        ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}"${v === 'parent' && parents.length >= 2 ? ' disabled title="Already has two parents"' : ''}>${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
+      <div class="field" id="fOtherWrap" hidden><label for="fOther">Other parent</label><select id="fOther"></select></div>
+      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Former partners</button></div></div>` : ''}
+      ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
+      <input type="hidden" id="fLink" value="">
+    </form>
+    <div class="foot"><button class="iconbtn" id="pBack">Cancel</button>${self ? '' : '<button class="iconbtn" id="pMore">Save &amp; add another</button>'}<button class="primary" id="pSave">Save</button></div>`);
+  const syncRel = v => {
+    if (!p) return;
+    const ow = $('#fOtherWrap'), kw = $('#fKindWrap');
+    ow.hidden = v !== 'child'; kw.hidden = v !== 'partner';
+    if (v === 'child') {
+      const prts = partnersOf(p.id);
+      $('#fOther').innerHTML = prts.map(x => `<option value="${x.id}">${esc(displayName(P(x.id)))}</option>`).join('') + '<option value="">Someone else, or not sure</option>';
+      if (!prts.length) ow.hidden = true;
+    }
+  };
+  if (p) { wireSeg('fRel', syncRel); wireSeg('fKind'); syncRel(rel); }
+  wireSeg('fLiving');
+  if (opts.fields) fillForm(opts.fields);
+  watchForm('add', id, { self });
+  if (opts.fields) formDirty = true;
+  wireDupCheck(pickId => {
+    $('#fLink').value = pickId;
+    const q = P(pickId);
+    $('#dups').innerHTML = `<span class="linked">Linking ${esc(displayName(q))}, who is already in the tree. <button type="button" id="unlink">Undo</button></span>`;
+    $('#unlink').onclick = () => { $('#fLink').value = ''; $('#dups').innerHTML = ''; };
+  });
+  $('#pClose').onclick = () => guardClose();
+  $('#pBack').onclick = () => guardClose(() => { closePanel(); if (sessionAdded.length) batchThanks(); else if (p) openPerson(p.id); });
+  $('#addForm').onsubmit = e => { e.preventDefault(); currentSave(); };
+
+  const build = f => {
+    const link = $('#fLink').value;
+    const me = link || 'new:1';
+    const items = [];
+    if (!link) {
+      if (!f.first && !f.last) throw new Error('Add at least a name. "Unknown" works.');
+      items.push({ kind: 'person', ref: 'new:1', data: personData(f), source: f.source });
+    }
+    if (p) {
+      const r = segVal('fRel');
+      if (r === 'child') {
+        items.push({ kind: 'relationship', type: 'parent_child', a: p.id, b: me, source: f.source });
+        const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
+        if (other) items.push({ kind: 'relationship', type: 'parent_child', a: other, b: me, source: f.source });
+      } else if (r === 'parent') items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, source: f.source });
+      else if (r === 'partner') items.push({ kind: 'relationship', type: 'partner', a: p.id, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+      else if (r === 'sibling') {
+        if (parents.length) parents.forEach(pp => items.push({ kind: 'relationship', type: 'parent_child', a: pp, b: me, source: f.source }));
+        else {
+          // Siblings are stored as shared parents. Nobody knows them yet, so an unknown parent holds the link.
+          items.push({ kind: 'person', ref: 'new:p', data: { is_placeholder: true } });
+          items.push({ kind: 'relationship', type: 'parent_child', a: 'new:p', b: p.id });
+          items.push({ kind: 'relationship', type: 'parent_child', a: 'new:p', b: me, source: f.source });
+        }
+      }
+    }
+    if (self) items.push({ kind: 'claim', person: me });
+    return { items, name: link ? P(link).first : (f.first || f.last || 'Unknown') };
+  };
+  const doSave = async more => {
+    const f = readForm();
+    let b;
+    try { b = build(f); } catch (err) { formError(err.message); return; }
+    formError(''); busy(true);
+    let res;
+    try { res = await submit(b.items, f); }
+    catch (err) { busy(false); formError(err.message); return; }
+    busy(false); clearDraft();
+    sessionAdded.push(b.name);
+    if (self) { STATE.viewer = (res.ids && res.ids['new:1']) || $('#fLink').value || STATE.viewer; STATE.focus = STATE.viewer; }
+    if (more) {
+      const keepRel = segVal('fRel');
+      await reload();
+      toast(`Saved ${b.name}. Add the next one.`);
+      openAdd(id, { rel: keepRel });
+    } else {
+      closePanel();
+      batchThanks();
+      pendingReload = true;
+    }
+  };
+  $('#pSave').onclick = currentSave = () => doSave(false);
+  if ($('#pMore')) $('#pMore').onclick = () => doSave(true);
+}
+
+async function claimMe(id) {
+  try { await submit([{ kind: 'claim', person: id }], { who: myName() }); }
+  catch (err) { toast(err.message); return; }
+  STATE.viewer = id;
+  closePanel();
+  toast(ADMIN_KEY ? "You're set as you." : `Thanks, ${P(id).first}. ${OWNER_NAME} will confirm it's you.`);
+  reload();
+}
+
+/* =====================================================================
+ * Pages: thank you, send to family, search
+ * ===================================================================== */
+let pendingReload = false;
+function showPage(id) { $('#' + id).classList.add('on'); }
+function hidePage(id) { $('#' + id).classList.remove('on'); }
+function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; showPage('thanks'); }
+$('#thanksBack').onclick = () => { hidePage('thanks'); if (pendingReload) { pendingReload = false; setTimeout(() => reload(), 150); } };
+$('#thanksSend').onclick = () => { hidePage('thanks'); if (pendingReload) { pendingReload = false; reload(); } openSend(); };
+
+function siteBase() { return location.origin + location.pathname.replace(/[^/]*$/, ''); }
+function shareLink() { const from = STATE.viewer || ''; return siteBase() + (from ? '?from=' + encodeURIComponent(from) : ''); }
+function openSend() {
+  const v = STATE.viewer && P(STATE.viewer);
+  const msg = `I'm helping build our family tree. Open this, look around, and add anyone you know, especially the relatives we've lost. It takes a minute.\n\n${shareLink()}`;
+  openPanel(`
+    <div class="head"><div><h2>Send Roots to a family member</h2><div class="sub">${v ? `The link opens the tree on you, ${esc(v.first)}, so they start somewhere familiar.` : 'Tip: tap your own card and choose "This is me" first, so the link opens the tree on you.'}</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body sendbox">
+      <div class="field"><label for="sMsg">Message</label><textarea id="sMsg" style="min-height:140px">${esc(msg)}</textarea></div>
+      <div class="field"><label for="sLink">Link</label><div class="linkrow"><input id="sLink" readonly value="${esc(shareLink())}"><button class="iconbtn" id="sCopyLink">Copy link</button></div></div>
+      <p class="hint">Anyone with the link sees the tree as it stands. Living people show by first and last name only.</p>
+    </div>
+    <div class="foot">${navigator.share ? '<button class="iconbtn" id="sShare">Share…</button>' : ''}<button class="primary" id="sCopy">Copy message</button></div>`);
+  $('#pClose').onclick = closePanel;
+  const copy = async (text, done) => { try { await navigator.clipboard.writeText(text); toast(done); } catch (e) { const t = $('#sMsg'); t.focus(); t.select(); toast('Select the text and copy it'); } };
+  $('#sCopy').onclick = () => copy($('#sMsg').value, 'Message copied. Paste it into a text or email.');
+  $('#sCopyLink').onclick = () => copy(shareLink(), 'Link copied');
+  const sh = $('#sShare'); if (sh) sh.onclick = () => navigator.share({ title: 'Roots', text: $('#sMsg').value }).catch(() => {});
+}
+$('#btnSend').onclick = openSend;
+
+let toastT;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 3200); }
+
+function pickPerson(title, sub, onPick, filter = () => true) {
+  openPanel(`
+    <div class="head"><div><h2>${title}</h2><div class="sub">${sub}</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body"><div class="field"><label for="qName">Name</label><input id="qName" placeholder="Start typing a name" autocomplete="off"></div><div class="pick" id="qList"></div></div>`);
+  $('#pClose').onclick = closePanel;
+  const list = () => {
+    const q = $('#qName').value.toLowerCase().trim();
+    const hits = [...G.people.values()].filter(p => !p.placeholder && filter(p) && (!q || displayName(p).toLowerCase().includes(q) || (p.birth || '').toLowerCase().includes(q))).slice(0, 40);
+    $('#qList').innerHTML = hits.map(p => `<button data-id="${p.id}"><span>${esc(displayName(p))}</span><small>${esc([relation(p.id), years(p)].filter(Boolean).join(' · '))}</small></button>`).join('') || '<p class="hint">Nobody by that name yet.</p>';
+    document.querySelectorAll('#qList button').forEach(b => b.onclick = () => onPick(b.dataset.id));
+  };
+  $('#qName').oninput = list; list(); setTimeout(() => $('#qName').focus(), 50);
+}
+$('#btnSearch').onclick = () => pickPerson('Find a person', 'Everyone in the tree, folded branches included.', id => { closePanel(); STATE.focus = id; render(); });
+$('#btnAll').onclick = () => { STATE.all = !STATE.all; $('#btnAll').setAttribute('aria-pressed', STATE.all); if (!STATE.all) STATE.open.clear(); render({ camera: false }); };
