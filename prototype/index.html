@@ -15,7 +15,10 @@
   --paper: #EEEBE3;
   --card: #F8F6F1;
   --ink: #1D2B24;
-  --ink-soft: #55625B;
+  --ink-soft: #4A564F;
+  --bg: #D2D9CD;
+  --soil: #6B5524;
+  --year: #8A6A22;
   --line: rgba(29, 43, 36, .14);
   --gilt: #A9822F;
   --gilt-light: #C9A35A;
@@ -29,13 +32,17 @@
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
-body { background: var(--paper); color: var(--ink); font-family: var(--font-ui); font-size: 15px; overflow: hidden; -webkit-font-smoothing: antialiased; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 15px; overflow: hidden; -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; }
+body[data-bg="stone"] { --bg: #DBD4C5; }
+body[data-bg="fog"] { --bg: #D5D9DA; }
+body[data-bg="paper"] { --bg: #EEEBE3; }
+body { transition: background-color .4s var(--ease); }
 :focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }
 
 /* ---------- top bar ---------- */
 .topbar { position: fixed; inset: 0 0 auto 0; height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 16px; z-index: 20;
-  background: linear-gradient(var(--paper) 70%, rgba(238, 235, 227, 0)); }
+  background: linear-gradient(var(--bg) 60%, transparent); }
 .topbar .logo { height: 34px; width: auto; display: block; }
 .topbar .spacer { flex: 1; }
 .iconbtn { height: 40px; min-width: 40px; padding: 0 12px; border-radius: 20px; border: 1px solid var(--line); background: var(--card); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
@@ -65,30 +72,30 @@ button { font: inherit; color: inherit; }
 .edge.partner.former { opacity: .45; }
 .edge.stem { stroke: var(--ink-soft); stroke-width: 1.4; opacity: .7; }
 .ground { stroke: var(--ink); stroke-opacity: .32; stroke-width: 1.5; }
-.soilband { fill: #A9822F; fill-opacity: .07; }
+.soilband { fill: var(--soil); fill-opacity: .09; }
 .ring { fill: none; stroke: var(--ink); stroke-opacity: .06; }
 
 .node { position: absolute; left: 0; top: 0; will-change: transform, opacity; }
-.card { position: absolute; transform: translate(-50%, -50%); width: 180px; height: 70px; padding: 8px 12px 8px 10px; border-radius: 14px; border: 1px solid rgba(232, 226, 210, .08);
-  background: var(--forest-raised); color: var(--bone); display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
-  box-shadow: 0 2px 6px rgba(23, 36, 30, .18); transition: transform .25s var(--ease), box-shadow .25s var(--ease), border-color .25s; }
-.card:hover { border-color: rgba(201, 163, 90, .7); }
-.card.selected { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 12px 30px rgba(23, 36, 30, .35); border-color: var(--gilt-light); z-index: 2; }
-.card .av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 500; background: rgba(232, 226, 210, .14); color: var(--bone); }
+.card { position: absolute; transform: translate(-50%, -50%); width: 180px; height: 70px; padding: 8px 12px 8px 10px; border-radius: 14px; border: 1px solid rgba(29, 43, 36, .14);
+  background: #FFFDF9; color: var(--ink); display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(23, 36, 30, .08), 0 4px 12px rgba(23, 36, 30, .06); transition: transform .25s var(--ease), box-shadow .25s var(--ease), border-color .25s; }
+.card:hover { border-color: rgba(29, 43, 36, .4); }
+.card.selected { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 12px 30px rgba(23, 36, 30, .2); border-color: var(--ink); z-index: 2; }
+.card .av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 500; background: #E7E4DA; color: var(--ink); }
 .card .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .card .nm { font-weight: 500; font-size: 14px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card .yr { font-size: 11.5px; color: var(--gilt-light); font-variant-numeric: tabular-nums; line-height: 1.2; }
-.card .rl { font-size: 12px; color: rgba(232, 226, 210, .74); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card.deceased .av { background: rgba(201, 163, 90, .22); color: var(--gilt-light); }
-.card.focus { width: 210px; height: 82px; border: 2px solid var(--gilt-light); background: var(--forest); box-shadow: 0 0 0 6px rgba(201, 163, 90, .16), 0 10px 26px rgba(23, 36, 30, .3); }
-.card.focus .av { width: 42px; height: 42px; font-size: 15px; background: var(--gilt-light); color: var(--forest); }
+.card .yr { font-size: 11.5px; color: var(--year); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.card .rl { font-size: 12px; color: var(--ink-soft); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.deceased .av { background: #F1E7CF; color: #7A5D1E; }
+.card.focus { width: 210px; height: 82px; border: 2px solid var(--gilt); background: #FFFFFF; box-shadow: 0 0 0 6px rgba(169, 130, 47, .16), 0 10px 26px rgba(23, 36, 30, .16); }
+.card.focus .av { width: 42px; height: 42px; font-size: 15px; background: var(--ink); color: #FFFDF9; }
 .card.focus .nm { font-size: 16px; }
-.card.placeholder { border: 1.5px dashed rgba(29, 43, 36, .5); background: rgba(238, 235, 227, .7); color: var(--ink); box-shadow: none; }
+.card.placeholder { border: 1.5px dashed rgba(29, 43, 36, .45); background: rgba(255, 255, 255, .3); color: var(--ink); box-shadow: none; }
 .card.placeholder .rl { color: var(--ink-soft); }
 .card.placeholder .av { background: transparent; border: 1.5px dashed rgba(29, 43, 36, .5); color: var(--ink); }
-.card.pending { border: 1.5px dashed var(--gilt-light); background: var(--forest-raised); }
+.card.pending { border: 1.5px dashed var(--gilt); background: #FFF9EC; }
 .card .tag { position: absolute; top: -9px; right: 10px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; padding: 1px 7px; border-radius: 8px; background: var(--gilt); color: #fff; font-weight: 500; }
-.card .twice { position: absolute; bottom: -9px; right: 10px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--forest); border: 1px solid rgba(201, 163, 90, .5); display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--bone); }
+.card .twice { position: absolute; bottom: -9px; right: 10px; height: 18px; padding: 0 6px; border-radius: 9px; background: #FFFDF9; border: 1px solid rgba(29, 43, 36, .18); display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--ink-soft); }
 .card .twice svg { width: 16px; height: 10px; }
 
 .bud { position: absolute; transform: translate(-50%, -50%); height: 30px; padding: 0 12px 0 8px; border-radius: 15px; border: 1px solid rgba(169, 130, 47, .55); background: #FBF6E9;
@@ -119,11 +126,8 @@ button { font: inherit; color: inherit; }
   .panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 82vh; transform: translateY(40px); }
   .panel.on { transform: none; }
 }
-.panel .head { padding: 20px 20px 16px; display: flex; gap: 14px; align-items: center; background: var(--forest); color: var(--bone); }
-.panel .head .sub { color: rgba(232, 226, 210, .72); }
-.panel .head .x { color: var(--bone); }
-.panel .head .x:hover { background: rgba(232, 226, 210, .1); }
-.panel .head .av { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; font-weight: 500; background: rgba(232, 226, 210, .16); color: var(--bone); flex: none; }
+.panel .head { padding: 20px 20px 16px; display: flex; gap: 14px; align-items: center; border-bottom: 1px solid var(--line); }
+.panel .head .av { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; font-weight: 500; background: #E7E4DA; color: var(--ink); flex: none; }
 .panel h2 { margin: 0; font-weight: 500; font-size: 21px; line-height: 1.2; text-wrap: balance; }
 .panel .sub { color: var(--ink-soft); font-size: 13.5px; margin-top: 3px; }
 .panel .x { margin-left: auto; align-self: flex-start; width: 36px; height: 36px; border-radius: 18px; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
@@ -214,6 +218,8 @@ button { font: inherit; color: inherit; }
 .mock .menu { position: absolute; left: 0; bottom: 36px; width: 270px; background: #FBFAF6; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 30px rgba(23, 36, 30, .16); padding: 12px; display: none; flex-direction: column; gap: 10px; font-size: 13.5px; }
 .mock .menu.on { display: flex; }
 .mock label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.mock .menu .seg button { padding: 6px 10px; font-size: 13px; border-radius: 14px; }
+.mock .menu .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 .mock .menu button { text-align: left; border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 10px; cursor: pointer; font-size: 13.5px; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -275,6 +281,8 @@ button { font: inherit; color: inherit; }
   <div class="menu" id="mockMenu">
     <b>Prototype options</b>
     <label><input type="checkbox" id="optRoots" checked> Ancestors as roots, below the ground line</label>
+    <div class="field"><span class="lab">Background</span><div class="seg" id="optBg">
+      <button type="button" data-v="sage" aria-pressed="true">Sage</button><button type="button" data-v="stone" aria-pressed="false">Stone</button><button type="button" data-v="fog" aria-pressed="false">Fog</button><button type="button" data-v="paper" aria-pressed="false">Paper</button></div></div>
     <button id="optIntro">Replay the first-visit intro</button>
     <button id="optReset">Reset the sample tree</button>
   </div>
@@ -901,7 +909,7 @@ function drawEdge(r) {
 function drawRingMark(r, x, y, sub) {
   if (!r.deco) {
     r.deco = document.createElementNS(SVGNS, 'g');
-    r.deco.innerHTML = '<circle r="5" cx="-3.5" fill="#F8F6F1" stroke="#1D2B24" stroke-width="1.5"/><circle r="5" cx="3.5" fill="none" stroke="#1D2B24" stroke-width="1.5"/>';
+    r.deco.innerHTML = '<circle r="5" cx="-3.5" fill="#FFFDF9" stroke="#1D2B24" stroke-width="1.5"/><circle r="5" cx="3.5" fill="none" stroke="#1D2B24" stroke-width="1.5"/>';
     edgeG.appendChild(r.deco);
     const orig = r.el.remove.bind(r.el);
     r.el.remove = () => { orig(); r.deco.remove(); };
@@ -1012,7 +1020,7 @@ function openPerson(id) {
   if (!p.placeholder && !living) body += `<p class="prov">Added by ${esc(p.addedBy || 'Daniel Marlow')}${p.source ? ' · Source: ' + esc(p.source) : ''}</p>`;
   const isFocus = id === STATE.focus;
   openPanel(`
-    <div class="head"><div class="av" style="${living ? '' : 'background:rgba(201,163,90,.25);color:#C9A35A'}">${initials(p)}</div>
+    <div class="head"><div class="av" style="${living ? '' : 'background:#F1E7CF;color:#7A5D1E'}">${initials(p)}</div>
       <div><h2>${esc(full)}</h2><div class="sub">${esc([rel, years(p)].filter(Boolean).join(' · '))}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <div class="body">${body}</div>
@@ -1152,17 +1160,17 @@ $('#btnSearch').onclick = openSearch;
 
 /* ---- key: every symbol and line, drawn the way the tree draws it ---- */
 function keyCard(opts = {}) {
-  const fill = opts.fill || '#23362C', stroke = opts.stroke || 'none', dash = opts.dash ? ` stroke-dasharray="${opts.dash}"` : '';
-  const txt = opts.text || '#E8E2D2';
+  const fill = opts.fill || '#FFFDF9', stroke = opts.stroke || 'rgba(29,43,36,.25)', dash = opts.dash ? ` stroke-dasharray="${opts.dash}"` : '';
+  const txt = opts.text || '#1D2B24';
   return `<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="${opts.wide ? 4 : 10}" y="3" width="${opts.wide ? 84 : 72}" height="28" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="${opts.sw || 1.5}"${dash}/>
-    <circle cx="${opts.wide ? 18 : 23}" cy="17" r="7" fill="${opts.av || 'rgba(232,226,210,.16)'}"${opts.avDash ? ' stroke="#1D2B24" stroke-opacity=".5" stroke-width="1.2" stroke-dasharray="2 2"' : ''}/>
-    <rect x="${opts.wide ? 30 : 35}" y="11" width="34" height="4" rx="2" fill="${txt}"/><rect x="${opts.wide ? 30 : 35}" y="19" width="${opts.yr ? 20 : 24}" height="3" rx="1.5" fill="${opts.yr ? '#C9A35A' : txt}" fill-opacity=".7"/>
+    <circle cx="${opts.wide ? 18 : 23}" cy="17" r="7" fill="${opts.av || '#E7E4DA'}"${opts.avDash ? ' stroke="#1D2B24" stroke-opacity=".5" stroke-width="1.2" stroke-dasharray="2 2"' : ''}/>
+    <rect x="${opts.wide ? 30 : 35}" y="11" width="34" height="4" rx="2" fill="${txt}"/><rect x="${opts.wide ? 30 : 35}" y="19" width="${opts.yr ? 20 : 24}" height="3" rx="1.5" fill="${opts.yr ? '#8A6A22' : txt}" fill-opacity=".7"/>
     ${opts.tag ? '<rect x="52" y="0" width="30" height="7" rx="3.5" fill="#A9822F"/>' : ''}</svg>`;
 }
 function keyLine(d, opts = {}) {
   return `<svg viewBox="0 0 92 34" aria-hidden="true"><path d="${d}" fill="none" stroke="${opts.color || '#1D2B24'}" stroke-width="${opts.w || 2.4}" stroke-linecap="round"${opts.dash ? ` stroke-dasharray="${opts.dash}"` : ''}${opts.op ? ` stroke-opacity="${opts.op}"` : ''}/>${opts.extra || ''}</svg>`;
 }
-const RINGS_MARK = (x, y, op = 1) => `<g transform="translate(${x} ${y})" opacity="${op}"><circle r="5" cx="-3.5" fill="#EEEBE3" stroke="#1D2B24" stroke-width="1.5"/><circle r="5" cx="3.5" fill="none" stroke="#1D2B24" stroke-width="1.5"/></g>`;
+const RINGS_MARK = (x, y, op = 1) => `<g transform="translate(${x} ${y})" opacity="${op}"><circle r="5" cx="-3.5" fill="#FFFDF9" stroke="#1D2B24" stroke-width="1.5"/><circle r="5" cx="3.5" fill="none" stroke="#1D2B24" stroke-width="1.5"/></g>`;
 function openKey() {
   const row = (art, title, note) => `<div class="krow">${art}<div>${title}${note ? `<small>${note}</small>` : ''}</div></div>`;
   openPanel(`
@@ -1170,13 +1178,13 @@ function openKey() {
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <div class="body key">
       <h3>People</h3>
-      ${row(keyCard({ fill: '#17241E', stroke: '#C9A35A', sw: 2, av: '#C9A35A' }), 'The person the tree is centered on', 'Tap anyone, then "Center the tree" to move the center.')}
-      ${row(keyCard({ yr: true, av: 'rgba(201,163,90,.3)' }), 'Someone who has passed', 'Gold years, born and died. Tap for their story and photos.')}
+      ${row(keyCard({ fill: '#FFFFFF', stroke: '#A9822F', sw: 2, av: '#1D2B24' }), 'The person the tree is centered on', 'Tap anyone, then "Center the tree" to move the center.')}
+      ${row(keyCard({ yr: true, av: '#F1E7CF' }), 'Someone who has passed', 'Gold years, born and died. Tap for their story and photos.')}
       ${row(keyCard(), 'Someone living', 'No dates. Only their name shows; their details stay private.')}
-      ${row(keyCard({ stroke: '#C9A35A', dash: '4 3', tag: true }), 'Unconfirmed', 'Something you added. Only you see it until Jonny Ruzicka confirms it.')}
-      ${row(keyCard({ fill: 'rgba(238,235,227,.7)', stroke: '#1D2B24', dash: '3 3', text: '#1D2B24', av: 'none', avDash: true }), 'Unknown person', 'We know someone was here but not their name. Tap to fill it in.')}
+      ${row(keyCard({ fill: '#FFF9EC', stroke: '#A9822F', dash: '4 3', tag: true }), 'Unconfirmed', 'Something you added. Only you see it until Jonny Ruzicka confirms it.')}
+      ${row(keyCard({ fill: 'rgba(255,255,255,.3)', stroke: '#1D2B24', dash: '3 3', av: 'none', avDash: true }), 'Unknown person', 'We know someone was here but not their name. Tap to fill it in.')}
       ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="4" y="5" width="84" height="24" rx="12" fill="#FBF6E9" stroke="#A9822F" stroke-opacity=".55"/><path d="M18 24v-6M18 18c-3 0-4.5-2-4.5-5 3 0 4.5 2 4.5 5zM18 18c3 0 4.5-2 4.5-5-3 0-4.5 2-4.5 5z" fill="none" stroke="#A9822F" stroke-width="1.4" stroke-linecap="round"/><rect x="28" y="15" width="44" height="4" rx="2" fill="#1D2B24" fill-opacity=".7"/></svg>`, 'A folded branch', 'More relatives live here. Tap the bud to open it; tap the small minus on the card to fold it again.')}
-      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="16" y="9" width="60" height="16" rx="8" fill="#17241E" stroke="#C9A35A" stroke-opacity=".5"/><g transform="translate(29 17) scale(.5)"><circle r="9" cx="-6" fill="none" stroke="#A9822F" stroke-width="3"/><circle r="9" cx="6" fill="none" stroke="#A9822F" stroke-width="3"/></g><rect x="40" y="15" width="26" height="4" rx="2" fill="#E8E2D2"/></svg>`, 'Related twice', 'Two people who married and also share an ancestor, like second cousins.')}
+      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="16" y="9" width="60" height="16" rx="8" fill="#FFFDF9" stroke="#1D2B24" stroke-opacity=".2"/><g transform="translate(29 17) scale(.5)"><circle r="9" cx="-6" fill="none" stroke="#A9822F" stroke-width="3"/><circle r="9" cx="6" fill="none" stroke="#A9822F" stroke-width="3"/></g><rect x="40" y="15" width="26" height="4" rx="2" fill="#4A564F"/></svg>`, 'Related twice', 'Two people who married and also share an ancestor, like second cousins.')}
       <h3>Lines</h3>
       ${row(keyLine('M46 31 C46 18 46 16 46 3'), 'Parent to child', 'Branches above the ground line lead to children and grandchildren.')}
       ${row(keyLine('M46 3 C46 16 46 18 46 31', { color: '#A9822F' }), 'Roots', 'Gold lines below the ground line lead back to parents, grandparents and further.')}
@@ -1185,7 +1193,7 @@ function openKey() {
       ${row(keyLine('M6 17 H86', { w: 1.6, extra: RINGS_MARK(46, 17) }), 'Married or partners', 'Their children grow out of the rings.')}
       ${row(keyLine('M6 17 H86', { w: 1.6, dash: '5 5', op: .45, extra: RINGS_MARK(46, 17, .4) }), 'Former partners', 'Divorced or separated. Their children still connect to both.')}
       ${row(keyLine('M8 17 H84', { w: 1.4, dash: '3 4', color: '#55625B' }), 'Bud stem', 'Connects a folded branch to the person it belongs to.')}
-      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="0" y="17" width="92" height="17" fill="#A9822F" fill-opacity=".08"/><line x1="0" x2="92" y1="17" y2="17" stroke="#1D2B24" stroke-opacity=".32" stroke-width="1.5"/></svg>`, 'The ground line', 'The centered person stands on it: roots below, branches above.')}
+      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="0" y="17" width="92" height="17" fill="#6B5524" fill-opacity=".09"/><line x1="0" x2="92" y1="17" y2="17" stroke="#1D2B24" stroke-opacity=".32" stroke-width="1.5"/></svg>`, 'The ground line', 'The centered person stands on it: roots below, branches above.')}
     </div>`);
   $('#pClose').onclick = closePanel;
 }
@@ -1248,6 +1256,10 @@ $('#btnWhy').onclick = () => openIntro(0);
 
 /* ---- prototype options ---- */
 $('#btnMock').onclick = () => { const m = $('#mockMenu'); m.classList.toggle('on'); $('#btnMock').setAttribute('aria-expanded', m.classList.contains('on')); };
+document.querySelectorAll('#optBg button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#optBg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  document.body.dataset.bg = b.dataset.v;
+});
 $('#optRoots').onchange = e => { STATE.rootsBelow = e.target.checked; clearTree(); render({ camera: 'instant' }); };
 $('#optIntro').onclick = () => { $('#mockMenu').classList.remove('on'); clearTree(); openIntro(0); };
 $('#optReset').onclick = () => location.reload();
