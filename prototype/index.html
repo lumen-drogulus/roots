@@ -152,6 +152,13 @@ button { font: inherit; color: inherit; }
 .krow { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center; padding: 6px 0; font-size: 14px; line-height: 1.35; }
 .krow svg { width: 92px; height: 34px; display: block; }
 .krow small { display: block; color: var(--ink-soft); font-size: 12.5px; }
+.guard { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 12px; background: #FFF6E0; border: 1px solid rgba(169, 130, 47, .45); }
+.guard b { flex: 1 1 100%; font-weight: 500; }
+.guard button { flex: 1 1 auto; justify-content: center; }
+.resume { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; background: #FFFDF9; border: 1px solid rgba(169, 130, 47, .5); border-radius: 16px; box-shadow: 0 12px 30px rgba(23, 36, 30, .18);
+  padding: 12px 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: max-content; max-width: calc(100% - 32px); }
+.resume span { flex: 1 1 220px; }
+.resume[hidden] { display: none; }
 .twicebox { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); font-size: 13.5px; }
 .twicebox svg { width: 28px; height: 18px; flex: none; }
 
@@ -177,6 +184,8 @@ button { font: inherit; color: inherit; }
 .page p { margin: 0; line-height: 1.55; }
 .page .lede { font-family: var(--font-story); font-size: 19px; line-height: 1.55; }
 .page .placeholder-copy { border-left: 2px solid var(--gilt); padding: 4px 0 4px 14px; color: var(--ink-soft); font-family: var(--font-story); font-size: 17px; font-style: italic; }
+.why { display: flex; flex-direction: column; gap: 12px; font-family: var(--font-story); font-size: 18px; line-height: 1.55; }
+.why a { color: var(--ink); text-underline-offset: 3px; text-decoration-color: var(--gilt); }
 .page .sig { font-family: var(--font-story); font-size: 18px; }
 .page .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
 .page .linkbtn { border: 0; background: none; color: var(--ink-soft); cursor: pointer; padding: 8px; text-decoration: underline; text-underline-offset: 3px; }
@@ -317,6 +326,7 @@ button { font: inherit; color: inherit; }
 </section>
 
 <div class="toast" id="toast" role="status"></div>
+<div class="resume" id="resume" hidden><span id="resumeText"></span><button class="iconbtn" id="resumeNo">Discard</button><button class="primary" id="resumeYes">Pick up where you left off</button></div>
 
 <script>
 /* =====================================================================
@@ -975,7 +985,7 @@ stage.addEventListener('pointermove', e => {
 const endPtr = e => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = null; if (!pointers.size) stage.classList.remove('dragging'); };
 stage.addEventListener('pointerup', endPtr); stage.addEventListener('pointercancel', endPtr);
 stage.addEventListener('wheel', e => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * .0015), e.clientX, e.clientY); }, { passive: false });
-stage.addEventListener('click', e => { if (!e.target.closest('button') && !dragMoved) closePanel(); });
+stage.addEventListener('click', e => { if (!e.target.closest('button') && !dragMoved) guardClose(); });
 $('#btnZoomIn').onclick = () => zoomAt(1.2, innerWidth / 2, innerHeight / 2);
 $('#btnZoomOut').onclick = () => zoomAt(1 / 1.2, innerWidth / 2, innerHeight / 2);
 $('#btnHome').onclick = () => { closePanel(); STATE.focus = STATE.viewer; render(); };
@@ -986,8 +996,26 @@ addEventListener('resize', () => cameraTo(currentLayout && currentLayout.nodes.g
  * ===================================================================== */
 const panel = $('#panel'), scrim = $('#scrim');
 function openPanel(html) { panel.innerHTML = html; panel.classList.add('on'); if (innerWidth <= 700) scrim.classList.add('on'); }
-function closePanel() { panel.classList.remove('on'); scrim.classList.remove('on'); if (STATE.selected) { STATE.selected = null; refreshCards(); } }
-scrim.onclick = closePanel;
+function closePanel() { panel.classList.remove('on'); scrim.classList.remove('on'); formDirty = false; currentSave = null; if (STATE.selected) { STATE.selected = null; refreshCards(); } }
+let formDirty = false, currentSave = null, sessionAdded = [];
+// Close, but if the open form has unsaved typing, ask first. onDiscard runs if they throw it away.
+function guardClose(onDiscard) {
+  if (panel.classList.contains('on') && formDirty && currentSave) {
+    if (panel.querySelector('.guard')) return;
+    const foot = panel.querySelector('.foot');
+    const g = document.createElement('div');
+    g.className = 'guard';
+    g.innerHTML = '<b>Save what you typed?</b><button class="iconbtn" id="gDiscard">Discard</button><button class="iconbtn" id="gKeep">Keep editing</button><button class="primary" id="gSave">Save</button>';
+    foot.prepend(g);
+    $('#gDiscard').onclick = () => { clearDraft(); formDirty = false; if (onDiscard) onDiscard(); else { closePanel(); batchThanks(); } };
+    $('#gKeep').onclick = () => g.remove();
+    $('#gSave').onclick = () => currentSave();
+    return;
+  }
+  if (onDiscard && panel.classList.contains('on') && currentSave) { onDiscard(); return; }
+  closePanel(); batchThanks();
+}
+scrim.onclick = () => guardClose();
 function refreshCards() { for (const [id, r] of live) if (r.node && r.node.kind === 'person') updateNodeEl(r, r.node); }
 
 function openPerson(id) {
@@ -1045,12 +1073,36 @@ function fieldsHTML(p, living) {
     <p class="hint">Only a name is needed. "Unknown" counts as a name. Living people show first and last name only; everything else stays private.</p>`;
 }
 function wireSeg(id) { document.querySelectorAll('#' + id + ' button').forEach(b => b.onclick = () => document.querySelectorAll('#' + id + ' button').forEach(x => x.setAttribute('aria-pressed', x === b))); }
+function watchForm(kind, anchor) {
+  formDirty = false;
+  const form = panel.querySelector('form.form');
+  const keep = () => {
+    formDirty = true;
+    const rel = (document.querySelector('#fRel [aria-pressed="true"]') || {}).dataset;
+    try { localStorage.setItem('roots_draft', JSON.stringify({ kind, anchor, rel: rel ? rel.v : null, fields: readForm() })); } catch (e) {}
+  };
+  form.addEventListener('input', keep);
+  form.addEventListener('click', e => { if (e.target.closest('.seg button')) keep(); });
+}
+function clearDraft() { try { localStorage.removeItem('roots_draft'); } catch (e) {} }
+function fillForm(f) {
+  const set = (id, v) => { const el = $('#' + id); if (el && v) el.value = v; };
+  set('fFirst', f.first); set('fLast', f.last); set('fBorn', f.born); set('fDied', f.died); set('fPlace', f.bornPlace); set('fNotes', f.notes); set('fSource', f.source);
+  document.querySelectorAll('#fLiving button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === f.living));
+}
+function batchThanks() {
+  if (!sessionAdded.length) return;
+  const n = sessionAdded.length, first = sessionAdded[0];
+  sessionAdded = [];
+  showThanks(n > 1 ? `Thank you. ${n} people planted.` : `Thank you. ${esc(first)} is planted.`,
+    `Jonny Ruzicka looks over every addition before everyone sees it. Until then ${n > 1 ? 'they show' : esc(first) + ' shows'} on your tree, marked unconfirmed.`);
+}
 function readForm() {
   const v = id => ($('#' + id) || {}).value || '';
   const lv = (document.querySelector('#fLiving [aria-pressed="true"]') || {}).dataset;
   return { first: v('fFirst').trim(), last: v('fLast').trim(), born: v('fBorn').trim(), died: v('fDied').trim(), bornPlace: v('fPlace').trim(), notes: v('fNotes').trim(), source: v('fSource').trim(), living: lv ? lv.v : 'unknown' };
 }
-function openEdit(id) {
+function openEdit(id, restore) {
   const p = P(id);
   openPanel(`
     <div class="head"><div><h2>${p.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">Your changes go to Jonny Ruzicka to confirm. Nobody's entry gets overwritten.</div></div>
@@ -1058,48 +1110,67 @@ function openEdit(id) {
     <form class="body form" id="editForm">${fieldsHTML(p, p.placeholder ? null : isLiving(p))}</form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
   wireSeg('fLiving');
-  $('#pClose').onclick = closePanel; $('#pBack').onclick = () => openPerson(id);
+  if (restore) fillForm(restore.fields);
+  watchForm('edit', id);
+  if (restore) formDirty = true;
+  $('#pClose').onclick = () => guardClose(); $('#pBack').onclick = () => guardClose(() => openPerson(id));
   $('#editForm').onsubmit = e => e.preventDefault();
-  $('#pSave').onclick = () => {
+  $('#pSave').onclick = currentSave = () => {
     const f = readForm();
     if (!f.first && !f.last) { toast('Add at least a name. "Unknown" works.'); return; }
     const who = f.first || f.last;
     const tgt = P(id);
     if (tgt.placeholder) Object.assign(tgt, { placeholder: false, pending: true, first: f.first, last: f.last, born: f.born, died: f.died, notes: f.notes, living: f.living === 'living', sex: '' });
+    clearDraft();
     closePanel();
     showThanks(`Thank you. ${esc(who)} is saved.`, 'Jonny Ruzicka looks over every change before everyone sees it. Until then you’ll see it on your tree, marked unconfirmed.');
     render({ camera: false });
   };
 }
-function openAdd(id) {
+function commitAdd(id, f, relKind) {
+  const nid = 'new' + Date.now() + Math.floor(Math.random() * 1000);
+  const person = { id: nid, first: f.first || 'Unknown', last: f.last, born: f.born, died: f.died, bornPlace: f.bornPlace, notes: f.notes, source: f.source, living: f.living === 'living', pending: true, sex: '', addedBy: 'you' };
+  SAMPLE.people.push(person);
+  if (relKind === 'child') SAMPLE.rels.push(['pc', id, nid, 'biological', true]);
+  if (relKind === 'parent') SAMPLE.rels.push(['pc', nid, id, 'biological', true]);
+  if (relKind === 'partner') SAMPLE.rels.push(['partner', id, nid, 'partner']);
+  if (relKind === 'sibling') { const ps = parentsOf(id); if (ps.length) ps.forEach(pp => SAMPLE.rels.push(['pc', pp, nid, 'biological', true])); else { SAMPLE.people.push({ id: nid + 'p', placeholder: true }); SAMPLE.rels.push(['pc', nid + 'p', id], ['pc', nid + 'p', nid, 'biological', true]); } }
+  G = buildGraph(SAMPLE);
+  clearDraft();
+  sessionAdded.push(person.first);
+  return person;
+}
+function openAdd(id, restore) {
   const p = P(id);
+  const rel = (restore && restore.rel) || 'child';
+  const done = sessionAdded.length;
   openPanel(`
-    <div class="head"><div><h2>Add someone to ${esc(p.placeholder ? 'this branch' : p.first + "'s branch")}</h2><div class="sub">Add who you know, including relatives who have died.</div></div>
+    <div class="head"><div><h2>Add someone to ${esc(p.placeholder ? 'this branch' : p.first + "'s branch")}</h2><div class="sub">${done ? `${done} saved so far. Keep going, or tap Save on the last one.` : 'Add who you know, including relatives who have died.'}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <form class="body form" id="addForm">
       <div class="field"><span class="lab">They are ${esc(p.first || 'this person')}'s</span><div class="seg" id="fRel">
-        <button type="button" data-v="parent" aria-pressed="false">Parent</button><button type="button" data-v="partner" aria-pressed="false">Partner</button><button type="button" data-v="sibling" aria-pressed="false">Sibling</button><button type="button" data-v="child" aria-pressed="true">Child</button></div></div>
+        ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
       ${fieldsHTML({}, null)}
     </form>
-    <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
+    <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="iconbtn" id="pMore">Save &amp; add another</button><button class="primary" id="pSave">Save</button></div>`);
   wireSeg('fRel'); wireSeg('fLiving');
-  $('#pClose').onclick = closePanel; $('#pBack').onclick = () => openPerson(id);
+  if (restore && restore.fields) fillForm(restore.fields);
+  watchForm('add', id);
+  if (restore && restore.fields) formDirty = true;
+  $('#pClose').onclick = () => guardClose(); $('#pBack').onclick = () => guardClose(() => { closePanel(); if (sessionAdded.length) batchThanks(); else openPerson(id); });
   $('#addForm').onsubmit = e => e.preventDefault();
-  $('#pSave').onclick = () => {
+  const take = () => {
     const f = readForm();
-    if (!f.first && !f.last) { toast('Add at least a name. "Unknown" works.'); return; }
+    if (!f.first && !f.last) { toast('Add at least a name. "Unknown" works.'); return null; }
+    return commitAdd(id, f, document.querySelector('#fRel [aria-pressed="true"]').dataset.v);
+  };
+  $('#pSave').onclick = currentSave = () => { if (!take()) return; closePanel(); batchThanks(); pendingGrow = true; };
+  $('#pMore').onclick = () => {
     const relKind = document.querySelector('#fRel [aria-pressed="true"]').dataset.v;
-    const nid = 'new' + Date.now();
-    const person = { id: nid, first: f.first || 'Unknown', last: f.last, born: f.born, died: f.died, bornPlace: f.bornPlace, notes: f.notes, source: f.source, living: f.living === 'living', pending: true, sex: '', addedBy: 'you' };
-    SAMPLE.people.push(person);
-    if (relKind === 'child') SAMPLE.rels.push(['pc', id, nid, 'biological', true]);
-    if (relKind === 'parent') SAMPLE.rels.push(['pc', nid, id, 'biological', true]);
-    if (relKind === 'partner') SAMPLE.rels.push(['partner', id, nid, 'partner']);
-    if (relKind === 'sibling') { const ps = parentsOf(id); if (ps.length) ps.forEach(pp => SAMPLE.rels.push(['pc', pp, nid, 'biological', true])); else { SAMPLE.people.push({ id: nid + 'p', placeholder: true }); SAMPLE.rels.push(['pc', nid + 'p', id], ['pc', nid + 'p', nid, 'biological', true]); } }
-    G = buildGraph(SAMPLE);
-    closePanel();
-    showThanks(`Thank you. ${esc(person.first)} is planted.`, `Jonny Ruzicka looks over every addition before everyone sees it. Until then ${esc(person.first)} shows on your tree, marked unconfirmed.`);
-    pendingGrow = true;
+    const person = take(); if (!person) return;
+    render({ camera: false });
+    toast(`Saved ${person.first}. Add the next one.`);
+    openAdd(id, { rel: relKind });
   };
 }
 let pendingGrow = false;
@@ -1201,8 +1272,14 @@ const INTRO = [
   () => `
     <svg viewBox="4 8 216 112" style="width:180px;height:auto" aria-hidden="true">${document.querySelector('.topbar .logo').innerHTML}</svg>
     <h1>Welcome to our family tree.</h1>
-    <p class="lede">Why I built this</p>
-    <p class="placeholder-copy">[Jonny Ruzicka's story goes here: why this tree, who it's for, and the people we've lost whose names shouldn't disappear with them. A few short paragraphs in his own words.]</p>
+    <div class="why">
+      <p>When I was a kid, our family got together all the time. Card games at someone's house. Big reunions at the park. Christmas parties where one of us played Santa.</p>
+      <p>Over the years, the patriarchs and matriarchs who held us together passed on, and many of us lost touch.</p>
+      <p>Now I have a family of my own, an adult son and a daughter-in-law, and I want to bring back the family spirit I grew up with. This tree is where I'm starting: a detailed picture of who we are and how we're all connected.</p>
+      <p>It only grows if you help. Add the relatives you know, especially the ones we've lost, then send the link to every relative you can. Together we can build something beautiful.</p>
+      <p>Questions? Email me at <a href="mailto:jonathonpr@gmail.com">jonathonpr@gmail.com</a>.</p>
+      <p>Thank you for helping this tree grow. I hope it brings us back around the same table.</p>
+    </div>
     <p class="sig">Jonny Ruzicka</p>`,
   () => `
     <h1>How it works</h1>
@@ -1263,6 +1340,17 @@ let seen = false; try { seen = localStorage.getItem('roots_intro_seen') === '1';
 const qs = new URLSearchParams(location.search);
 if (qs.has('nointro')) seen = true;
 if (seen) render({ camera: 'instant' }); else { render({ camera: 'instant' }); openIntro(0); }
+(function offerResume() {
+  let d = null; try { d = JSON.parse(localStorage.getItem('roots_draft') || 'null'); } catch (e) {}
+  if (!d || !d.fields || !G.people.has(d.anchor)) return;
+  const f = d.fields;
+  if (![f.first, f.last, f.notes, f.born, f.bornPlace, f.source].some(Boolean)) return;
+  const who = f.first || f.last || 'someone';
+  $('#resumeText').textContent = d.kind === 'edit' ? `You didn't finish your changes to ${P(d.anchor).first || 'someone'}.` : `You didn't finish adding ${who}.`;
+  $('#resume').hidden = false;
+  $('#resumeNo').onclick = () => { clearDraft(); $('#resume').hidden = true; };
+  $('#resumeYes').onclick = () => { $('#resume').hidden = true; d.kind === 'edit' ? openEdit(d.anchor, d) : openAdd(d.anchor, d); };
+})();
 </script>
 </body>
 </html>
