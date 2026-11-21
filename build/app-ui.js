@@ -43,6 +43,16 @@ function lastNameHistory(p) {
   });
   return parts.join('<br>');
 }
+/* A child with one parent whose parent has a partner who isn't linked to the child: probably a missed link.
+   Asked from either side (the child's card and the partner's card). "Not a parent" hides it on this device. */
+function missingParentPairs(id) {
+  let no = []; try { no = JSON.parse(store.get('roots_nudge_no') || '[]'); } catch (e) {}
+  const out = new Map();
+  const ps = parentsOf(id);
+  if (ps.length === 1) partnersOf(ps[0]).forEach(x => { if (x.id !== id && !P(x.id).placeholder) out.set(x.id + '>' + id, [x.id, id]); });
+  partnersOf(id).forEach(x => childrenOf(x.id).forEach(c => { const cp = parentsOf(c); if (cp.length === 1 && cp[0] === x.id && c !== id && !P(c).placeholder) out.set(id + '>' + c, [id, c]); }));
+  return [...out.entries()].filter(([k]) => !no.includes(k)).map(([, v]) => v);
+}
 function openPerson(id) {
   STATE.selected = id; refreshCards();
   const p = P(id), living = isLiving(p), rel = relation(id), twice = connectedTwice(id);
@@ -71,6 +81,10 @@ function openPerson(id) {
     ...childrenOf(id).filter(c => kindWords[G.pcSub.get(id + '>' + c)]).map(c => `${esc(p.first || 'They')} is ${esc(displayName(P(c)))}'s ${kindWords[G.pcSub.get(id + '>' + c)]}.`)
   ];
   if (kinLines.length && !p.placeholder) body += `<p class="kinline">${kinLines.join(' ')}</p>`;
+  if (!p.placeholder && !p.pending) missingParentPairs(id).forEach(([a, b]) => {
+    body += `<div class="nudge" data-pair="${esc(a + '>' + b)}"><span>Is <b>${esc(displayName(P(a)))}</b> also <b>${esc(displayName(P(b)))}</b>'s parent?</span>
+      <span class="nbtns"><button class="nbtn yes" data-yes>Yes, link them</button><button class="nbtn" data-no>No</button></span></div>`;
+  });
   if (twice) body += `<div class="twicebox">${ICON.rings}<span>Related twice: ${esc(p.first)} and ${esc(P(twice.partner).first)} both descend from ${esc(displayName(P(twice.ancestor)))}.</span></div>`;
   if (p.pending) body += `<div class="private"><span>You added ${esc(p.first || 'this')}. ${OWNER_NAME} hasn't confirmed it yet, so only you can see it.</span></div>`;
   if (!p.placeholder && !p.pending) {
@@ -98,6 +112,21 @@ function openPerson(id) {
   if ($('#pEdit')) $('#pEdit').onclick = () => openEdit(id);
   if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);
   const ap = $('#pAddPhoto'); if (ap) ap.onclick = () => toast('Adding photos is coming soon.');
+  document.querySelectorAll('.nudge').forEach(n => {
+    const [a, b] = n.dataset.pair.split('>');
+    n.querySelector('[data-no]').onclick = () => {
+      let no = []; try { no = JSON.parse(store.get('roots_nudge_no') || '[]'); } catch (e) {}
+      no.push(n.dataset.pair); store.set('roots_nudge_no', JSON.stringify(no)); n.remove();
+    };
+    n.querySelector('[data-yes]').onclick = async () => {
+      n.querySelectorAll('button').forEach(x => { x.disabled = true; });
+      try {
+        await submit([{ kind: 'relationship', type: 'parent_child', a, b }]);
+        toast(ADMIN_KEY ? 'Linked.' : `Linked. ${OWNER_NAME} will confirm it.`);
+        closePanel(); await reload();
+      } catch (err) { toast(err.message || "Couldn't link them."); n.querySelectorAll('button').forEach(x => { x.disabled = false; }); }
+    };
+  });
 }
 
 /* =====================================================================
@@ -350,6 +379,7 @@ function openAdd(id, opts = {}) {
         <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
       <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="former" aria-pressed="false">Former partners</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
+      <div class="field" id="fKidsWrap" hidden><span class="lab" id="fKidsLab">Are they also the parent of…</span><div class="kids" id="fKids"></div></div>
 ` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
       <input type="hidden" id="fLink" value="">
@@ -429,6 +459,14 @@ function openAdd(id, opts = {}) {
     }
     syncParent();
     syncSib();
+    // A new partner: offer the children who have only this one parent so far.
+    const kw2 = $('#fKidsWrap');
+    const lone = v === 'partner' ? childrenOf(p.id).filter(c => parentsOf(c).length === 1 && !P(c).placeholder) : [];
+    kw2.hidden = !lone.length;
+    if (lone.length) {
+      $('#fKidsLab').textContent = `Are they also the parent of ${lone.length === 1 ? 'this child' : 'any of these children'}?`;
+      $('#fKids').innerHTML = lone.map(c => `<label class="kid"><input type="checkbox" value="${esc(c)}"><span>${esc(displayName(P(c)))}</span></label>`).join('');
+    }
   };
   if (p) {
     wireSeg('fRel', syncRel); wireSeg('fKind'); wireSeg('fPc', syncParent); wireSeg('fSib', syncSib);
@@ -481,7 +519,11 @@ function openAdd(id, opts = {}) {
           if (other && other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
         }
       }
-      else if (r === 'partner') items.push({ kind: 'relationship', type: 'partner', a: p.id, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+      else if (r === 'partner') {
+        items.push({ kind: 'relationship', type: 'partner', a: p.id, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+        // Children of p they're also a parent of (ticked on the form).
+        document.querySelectorAll('#fKids input:checked').forEach(cb => items.push({ kind: 'relationship', type: 'parent_child', a: me, b: cb.value, source: f.source }));
+      }
       else if (r === 'sibling' && segVal('fSib') === 'half') {
         const shared = $('#fSibPar').value;
         if (!shared) throw new Error('Add the parent they share first, then add the half-sibling.');

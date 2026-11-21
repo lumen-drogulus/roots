@@ -314,6 +314,42 @@ async def main():
         check('former partner stored as former', any(r[2] == 'partner' and eid in (r[3], r[4]) and r[5] == 'former' for r in st14['Relationships'][1:]))
         check('former partner labeled and placed with exes', 'Former partner' in await tp.inner_text('.card:has-text("Erin")'))
 
+        # ---------- a partner who is also a parent: ticked on the form, or asked about later ----------
+        async def add_rel(card, rel, first, before_save=None):
+            await tp.locator('.card', has_text=card).first.click(); await tp.wait_for_timeout(300); await tp.click('#pAdd'); await tp.wait_for_timeout(300)
+            await tp.locator(f'#fRel button[data-v="{rel}"]').click(); await tp.wait_for_timeout(150)
+            await tp.fill('#fFirst', first); await tp.locator('#fLiving button[data-v="living"]').click()
+            if before_save: await before_save()
+            await tp.click('#pSave'); await tp.wait_for_timeout(1500); await tp.click('#thanksBack'); await tp.wait_for_timeout(1800)
+        async def other_none():
+            if await tp.is_visible('#fOther'): await tp.select_option('#fOther', value='')
+        await add_rel('Jonny', 'child', 'Lee', other_none)
+        async def tick_lee():
+            await tp.locator('#fKind button[data-v="former"]').click()
+            check('partner form asks about the lone-parent child', await tp.is_visible('#fKidsWrap') and 'Lee' in await tp.inner_text('#fKids'))
+            await tp.locator('#fKids label', has_text='Lee').locator('input').check()
+        await add_rel('Jonny', 'partner', 'Pat', tick_lee)
+        st15 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        P15 = {r[2]: r[0] for r in st15['People'][1:] if r[2]}
+        pc15 = [(r[3], r[4]) for r in st15['Relationships'][1:] if r[2] == 'parent_child']
+        check('ticked child linked to the new partner', (P15['Pat'], P15['Lee']) in pc15 and any(r[2] == 'partner' and {r[3], r[4]} == {jonny_id, P15['Pat']} for r in st15['Relationships'][1:]))
+        # the missed-link case Jonny hit: partner added, child not ticked
+        await add_rel('Jonny', 'child', 'Sky', other_none)
+        await add_rel('Jonny', 'partner', 'Kay')
+        await tp.locator('.card', has_text='Sky').first.click(); await tp.wait_for_timeout(400)
+        nud = tp.locator('.nudge', has_text='Kay')
+        check("child's card asks if the partner is a parent", await nud.count() == 1)
+        await tp.locator('.nudge', has_text='Erin').locator('[data-no]').click(); await tp.wait_for_timeout(200)
+        check('"No" hides that question', await tp.locator('.nudge', has_text='Erin').count() == 0)
+        await nud.locator('[data-yes]').click(); await tp.wait_for_timeout(2500)
+        st16 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        P16 = {r[2]: r[0] for r in st16['People'][1:] if r[2]}
+        check('"Yes, link them" links the parent', any(r[2] == 'parent_child' and r[3] == P16['Kay'] and r[4] == P16['Sky'] for r in st16['Relationships'][1:]))
+        await tp.locator('.card', has_text='Sky').first.click(); await tp.wait_for_timeout(400)
+        check('question gone once linked', await tp.locator('.nudge', has_text='Kay').count() == 0)
+        await tp.screenshot(path=OUT + '08_nudge.png')
+        await tp.click('#pClose'); await tp.wait_for_timeout(200)
+
         # ---------- pause ----------
         await op.click('#btnPause'); await op.wait_for_timeout(700)
         await rp.reload(); await wait_api(rp)
