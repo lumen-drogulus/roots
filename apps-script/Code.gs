@@ -350,15 +350,15 @@ function publicPerson_(db, p) {
     id: p.id,
     living: living,
     first_name: p.first_name,
+    middle_name: p.middle_name,   // public for everyone (Jonny, 2026-11-20): tells apart relatives with the same name
+    nicknames: p.nicknames,       // "Goes by", same reason
     last_name: currentSurname_(p),
     is_placeholder: isTrue_(p.is_placeholder),
     added_by: contributorName_(db, p.submitted_by)
   };
   if (living) return base;
-  base.middle_name = p.middle_name;
   base.birth_surname = p.birth_surname;
   base.married_names = marriedList_(p);
-  base.nicknames = p.nicknames;
   base.sex = p.sex;
   base.birth_date = p.birth_date;
   base.birth_place = p.birth_place;

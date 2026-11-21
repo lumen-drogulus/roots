@@ -44,11 +44,11 @@ test('admin seed is approved immediately and sets the owner', () => {
   assert.strictEqual(tree.meta.owner_person_id, ids['new:me']);
 });
 
-test('living people show first + current last name only', () => {
+test('living people show names only: first, middle, goes-by, current last', () => {
   const { t, ids } = setup();
   const tree = t.get({ action: 'tree' });
   const mom = tree.people.find(p => p.id === ids['new:mom']);
-  assert.deepStrictEqual(Object.keys(mom).sort(), ['added_by', 'first_name', 'id', 'is_placeholder', 'last_name', 'living'].sort());
+  assert.deepStrictEqual(Object.keys(mom).sort(), ['added_by', 'first_name', 'id', 'is_placeholder', 'last_name', 'living', 'middle_name', 'nicknames'].sort());
   assert.strictEqual(mom.first_name, 'Carol');
   assert.strictEqual(mom.last_name, 'Ruzicka');
   assert.strictEqual(mom.living, true);
@@ -57,10 +57,20 @@ test('living people show first + current last name only', () => {
 test('no private value appears anywhere in the public response', () => {
   const { t } = setup();
   const raw = JSON.stringify(t.get({ action: 'tree' }));
-  for (const secret of ['Maidenly', 'MOM-PRIVATE-NOTE', 'JONNY-PRIVATE-NOTE', 'Cleveland', 'Cee', 'Ann', '1950', '1975',
+  for (const secret of ['Maidenly', 'MOM-PRIVATE-NOTE', 'JONNY-PRIVATE-NOTE', 'Cleveland', '1950', '1975',
     TOK_JONNY, 'C-', 'merge_log', 'token', 'female']) {
     assert.ok(!raw.includes(secret), 'leaked: ' + secret);
   }
+});
+
+test('middle name and goes-by are public, even for living people', () => {
+  const { t, ids } = setup();
+  const mom = t.get({}).people.find(p => p.id === ids['new:mom']);
+  assert.strictEqual(mom.living, true);
+  assert.strictEqual(mom.middle_name, 'Ann');
+  assert.strictEqual(mom.nicknames, 'Cee');
+  assert.strictEqual(mom.last_name, 'Ruzicka');
+  assert.strictEqual(mom.birth_surname, undefined);
 });
 
 test('deceased people show everything', () => {

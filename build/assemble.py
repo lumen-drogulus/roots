@@ -61,6 +61,10 @@ engine = rep(engine, "    r.dash = e.pending || P(e.child).placeholder || e.pare
   "    const nonBirth = e.parents.every(x => pcKind(x, e.child));\n    if (nonBirth) el.style.strokeWidth = Math.max(1.1, (3.4 - gen * 0.55) * 0.6);\n    r.dash = e.pending || P(e.child).placeholder || e.parents.some(x => P(x).placeholder) ? '0.02 0.03' : nonBirth ? '0.07 0.045' : null;")
 keyjs = rep(keyjs, "      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4' }),",
   "      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '7 4', w: 1.6 }), 'Step, adoptive or foster parent', 'A thinner dashed line. With a birth parent beside them, they share the birth line; the card says Stepmother, Stepchild and so on.')}\n      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4' }),")
+# Cards: the name people use. Goes-by in quotes, else a middle initial, so two relatives with the same name differ.
+engine = rep(engine, "function displayName(p) {",
+  "function cardName(p) {\n  if (p.placeholder) return 'Unknown';\n  const nick = (p.nicknames || '').split(',')[0].trim();\n  const mid = nick && !sameNameE(nick, p.first) ? `\"${nick}\"` : p.middle ? p.middle.trim()[0] + '.' : '';\n  return [p.first, mid, p.last].filter(Boolean).join(' ');\n}\nconst sameNameE = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();\nfunction displayName(p) {")
+engine = rep(engine, "<span class=\"nm\">${p.placeholder ? 'Unknown' : esc(displayName(p))}</span>", "<span class=\"nm\">${esc(cardName(p))}</span>")
 ui = open('build/app-ui.js').read()
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
 app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-boot.js').read()

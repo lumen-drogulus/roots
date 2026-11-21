@@ -47,14 +47,14 @@ function openPerson(id) {
   STATE.selected = id; refreshCards();
   const p = P(id), living = isLiving(p), rel = relation(id), twice = connectedTwice(id);
   const name = p.placeholder ? 'Unknown' : displayName(p);
-  const full = living || p.placeholder ? name : [p.first, p.nicknames ? `"${p.nicknames}"` : '', p.middle, p.last].filter(Boolean).join(' ');
+  const full = p.placeholder ? name : [p.first, p.nicknames && !sameName(p.nicknames, p.first) ? `"${p.nicknames}"` : '', p.middle, p.last].filter(Boolean).join(' ');
   let body = '';
   if (p.placeholder) {
     body += `<p class="story">Nobody has named this person yet. If you know who ${rel ? 'this ' + rel.toLowerCase() : 'they'} ${living ? 'is' : 'was'}, fill in what you know. Even a first name helps.</p>`;
   } else if (living && !p.pending) {
     body += id === STATE.viewer
-      ? `<div class="private">${ICON.lock}<span>Relatives see only your name. Your dates, places and stories stay private. ${OWNER_NAME} can see everything.</span></div>`
-      : `<div class="private">${ICON.lock}<span>${esc(p.first)} is living, so only their name shows here. Dates, places and stories stay private while they're alive.</span></div>`;
+      ? `<div class="private">${ICON.lock}<span>Relatives see only your names. Your dates, places and stories stay private. ${OWNER_NAME} can see everything.</span></div>`
+      : `<div class="private">${ICON.lock}<span>${esc(p.first)} is living, so only their names show here. Dates, places, maiden name and stories stay private while they're alive.</span></div>`;
   } else {
     const facts = [];
     if (p.bornRaw || p.bornPlace) facts.push(`<dt>Born</dt><dd>${esc([fuzzyLong(p.bornRaw), p.bornPlace].filter(Boolean).join(', '))}</dd>`);
@@ -181,7 +181,7 @@ function fieldsHTML(p, livingV, opts = {}) {
     <div class="field"><label for="fSource">Information source</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(opts.edit ? '' : (p.source || ''))}"></div>
     ${whoField()}
     <p class="formerr" id="formErr" role="alert" hidden></p>
-    <p class="hint">Only a name is needed. "Unknown" counts as a name. Living people show first and last name only; everything else stays private.</p>`;
+    <p class="hint">Only a name is needed. "Unknown" counts as a name. For living people, only names show (first, middle, goes by, last now); everything else stays private.</p>`;
 }
 function wireSeg(id, onChange) {
   document.querySelectorAll('#' + id + ' button').forEach(b => b.onclick = () => {

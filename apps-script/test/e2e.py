@@ -152,7 +152,7 @@ async def main():
         snames = await sp.eval_on_selector_all('.card .nm', 'e => e.map(x => x.textContent)')
         check('pending entries are invisible to others', not any(n.startswith(('Kate', 'Walter')) for n in snames), snames)
         await sp.locator('.card', has_text='Dana').first.click(); await sp.wait_for_timeout(300)
-        check('living person shows the privacy note', 'only their name shows' in await sp.inner_text('#panel'))
+        check('living person shows the privacy note', 'only their names show' in await sp.inner_text('#panel'))
         raw = urllib.request.urlopen(urllib.request.Request(API, data=json.dumps({'action': 'tree'}).encode(), headers={'Content-Type': 'text/plain'})).read().decode()
         check('public API has no tokens or living details', 'token' not in raw and 'Kate' not in raw)
 
@@ -233,6 +233,15 @@ async def main():
         st10 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
         check('marriage marked divorced', any(r[2] == 'partner' and {r[3], r[4]} == {jonny_id, did} and r[5] == 'divorced' for r in st10['Relationships'][1:]))
         check('former partner label', 'Former partner' in await tp.inner_text('.card:has-text("Dana")'))
+        # middle name and goes-by for a living person reach everyone
+        await tp.locator('.card', has_text='Kate').first.click(); await tp.wait_for_timeout(300); await tp.click('#pEdit'); await tp.wait_for_timeout(300)
+        await tp.fill('#fMiddle', 'Lynn'); await tp.fill('#fNick', 'Katie'); await tp.click('#pSave'); await tp.wait_for_timeout(1500)
+        await tp.click('#thanksBack'); await tp.wait_for_timeout(1500)
+        await sp.reload(); await wait_api(sp)
+        check('stranger sees a living goes-by on the card', await sp.locator('.card', has_text='"Katie"').count() == 1)
+        await sp.locator('.card', has_text='Katie').first.click(); await sp.wait_for_timeout(300)
+        check('stranger sees the full name of a living person', 'Kate "Katie" Lynn Ruzicka' in await sp.inner_text('#panel'))
+        await sp.click('#pClose')
         await tp.click('#btnSend') if False else None
         lbl = await tp.locator('#fSource').count()
 
