@@ -148,9 +148,12 @@ function siblingsOf(id) {
 const isLiving = p => !p.placeholder && !!p.living;
 function cardName(p) {
   if (p.placeholder) return 'Unknown';
-  const nick = (p.nicknames || '').split(',')[0].trim();
-  const mid = nick && !sameNameE(nick, p.first) ? `"${nick}"` : p.middle ? p.middle.trim()[0] + '.' : '';
-  return [p.first, mid, p.last].filter(Boolean).join(' ');
+  const nickOf = x => { const n = (x.nicknames || '').split(',')[0].trim(); return n && !sameNameE(n, x.first) ? n : ''; };
+  const short = x => [x.first, nickOf(x) ? `"${nickOf(x)}"` : x.middle ? x.middle.trim()[0] + '.' : '', x.last].filter(Boolean).join(' ');
+  const base = short(p);
+  // Two people who would read the same (a father and son both going by Jonny) also get their middle initial.
+  const clash = nickOf(p) && p.middle && [...G.people.values()].some(x => x.id !== p.id && !x.placeholder && short(x) === base);
+  return clash ? [p.first, `"${nickOf(p)}"`, p.middle.trim()[0] + '.', p.last].join(' ') : base;
 }
 const sameNameE = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 function displayName(p) { return p.placeholder ? 'Unknown' : [p.first, p.last].filter(Boolean).join(' '); }
