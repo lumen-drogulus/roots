@@ -76,6 +76,7 @@ function fuzzyToText(s) { const f = parseFuzzy(s); if (!f) return ''; if (f.q !=
  * ===================================================================== */
 let TREE = null;           // last API response
 const PHOTOS = new Map();  // person id -> approved photos
+const PC_ID = new Map();   // 'parent>child' -> approved relationship id, for correcting the kind of parent
 
 function fromPublic(p) {
   const married = p.married_names || [];
@@ -104,7 +105,8 @@ function fromOwn(p) {
 function treeToGraphData(tree) {
   const people = [], rels = [];
   (tree.people || []).forEach(p => people.push(fromPublic(p)));
-  (tree.relationships || []).forEach(r => rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype] : ['pc', r.a, r.b, r.subtype]));
+  PC_ID.clear();
+  (tree.relationships || []).forEach(r => { if (r.type !== 'partner') PC_ID.set(r.a + '>' + r.b, r.id); rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype] : ['pc', r.a, r.b, r.subtype]); });
   const own = tree.own || {};
   (own.people || []).forEach(p => people.push(fromOwn(p)));
   const ids = new Set(people.map(p => p.id));
@@ -134,6 +136,7 @@ function buildGraph(data) {
 }
 const P = id => G.people.get(id);
 const parentsOf = id => G.parents.get(id) || [];
+const pcKind = (a, b) => { const s = G.pcSub.get(a + '>' + b); return s === 'step' || s === 'adopted' || s === 'foster' ? s : ''; };
 const childrenOf = id => G.children.get(id) || [];
 const partnersOf = id => G.partners.get(id) || [];
 function siblingsOf(id) {
@@ -165,6 +168,12 @@ function relation(id) {
   const p = P(id), w = (m, f, n) => (!isLiving(p) && p.sex === 'male') ? m : (!isLiving(p) && p.sex === 'female') ? f : n;
   const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
   const greatX = (n, word) => cap('great-'.repeat(n) + word);
+  if (path === 'U' || path === 'D') {
+    const k = path === 'U' ? pcKind(id, v) : pcKind(v, id);
+    if (k === 'step') return path === 'U' ? w('Stepfather', 'Stepmother', 'Step-parent') : w('Stepson', 'Stepdaughter', 'Stepchild');
+    if (k === 'adopted') return path === 'U' ? w('Adoptive father', 'Adoptive mother', 'Adoptive parent') : w('Adopted son', 'Adopted daughter', 'Adopted child');
+    if (k === 'foster') return path === 'U' ? w('Foster father', 'Foster mother', 'Foster parent') : w('Foster son', 'Foster daughter', 'Foster child');
+  }
   if (/^U+$/.test(path)) { const n = path.length; return n === 1 ? w('Father', 'Mother', 'Parent') : greatX(n - 2, w('grandfather', 'grandmother', 'grandparent')); }
   if (/^D+$/.test(path)) { const n = path.length; return n === 1 ? w('Son', 'Daughter', 'Child') : greatX(n - 2, w('grandson', 'granddaughter', 'grandchild')); }
   if (path === 'P') { const sub = (partnersOf(v).find(x => x.id === id) || {}).sub; return sub === 'divorced' ? 'Former partner' : w('Husband', 'Wife', 'Partner'); }
@@ -398,11 +407,12 @@ function layout() {
     if (n.kind !== 'person') continue;
     const pars = parentsOf(n.id).filter(p => placed.has(p));
     if (!pars.length) continue;
+    // A couple shares one line from their rings, even when one is a step-parent (separate lines cross the other children's).
     const couple = pars.length === 2 && partnersOf(pars[0]).some(x => x.id === pars[1]);
     const groupsP = couple ? [pars] : pars.map(p => [p]);
     groupsP.forEach(gp => edges.push({ id: 'pc:' + gp.join('+') + '>' + n.id, kind: 'pc', parents: gp, child: n.id,
       pending: G.pending.has(gp[0] + '>' + n.id) || !!P(n.id).pending, sub: G.pcSub.get(gp[0] + '>' + n.id) || 'biological',
-      half: gp.length === 1 && parentsOf(n.id).length === 2 }));
+      half: gp.length === 1 && parentsOf(n.id).length === 2 && parentsOf(n.id).every(x => !pcKind(x, n.id)) }));
   }
   // partners
   const seen = new Set();
@@ -616,7 +626,9 @@ function drawEdge(r) {
     el.style.strokeWidth = Math.max(1.3, 3.4 - gen * 0.55);
     if (e.half) el.style.strokeOpacity = .55;
     else el.style.strokeOpacity = '';
-    r.dash = e.pending || P(e.child).placeholder || e.parents.some(x => P(x).placeholder) ? '0.02 0.03' : null;
+    const nonBirth = e.parents.every(x => pcKind(x, e.child));
+    if (nonBirth) el.style.strokeWidth = Math.max(1.1, (3.4 - gen * 0.55) * 0.6);
+    r.dash = e.pending || P(e.child).placeholder || e.parents.some(x => P(x).placeholder) ? '0.02 0.03' : nonBirth ? '0.07 0.045' : null;
   } else if (e.kind === 'partner') {
     const a = pos(e.a), b = pos(e.b);
     if (!a || !b) { el.setAttribute('d', ''); return; }
@@ -775,6 +787,12 @@ function openPerson(id) {
     if (p.notes) body += `<p class="story">${esc(p.notes)}</p>`;
     if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
   }
+  const kindWords = { step: 'step-parent', adopted: 'adoptive parent', foster: 'foster parent' };
+  const kinLines = [
+    ...parentsOf(id).filter(q => kindWords[G.pcSub.get(q + '>' + id)]).map(q => `${esc(displayName(P(q)))} is ${esc(p.first || 'their')}'s ${kindWords[G.pcSub.get(q + '>' + id)]}.`),
+    ...childrenOf(id).filter(c => kindWords[G.pcSub.get(id + '>' + c)]).map(c => `${esc(p.first || 'They')} is ${esc(displayName(P(c)))}'s ${kindWords[G.pcSub.get(id + '>' + c)]}.`)
+  ];
+  if (kinLines.length && !p.placeholder) body += `<p class="kinline">${kinLines.join(' ')}</p>`;
   if (twice) body += `<div class="twicebox">${ICON.rings}<span>Related twice: ${esc(p.first)} and ${esc(P(twice.partner).first)} both descend from ${esc(displayName(P(twice.ancestor)))}.</span></div>`;
   if (p.pending) body += `<div class="private"><span>You added ${esc(p.first || 'this')}. ${OWNER_NAME} hasn't confirmed it yet, so only you can see it.</span></div>`;
   if (!p.placeholder && !p.pending) {
@@ -829,6 +847,21 @@ function namesToData(now, birth, othersText) {
 function namesFromPerson(p) {
   const married = p.married || [];
   return { last: p.last || '', birthName: married.length ? (p.birthSurname || '') : '', otherNames: married.slice(0, -1).join(', ') };
+}
+const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
+/* In the edit form: one row per confirmed parent link, so a parent can be marked step, adoptive or foster later.
+   For living people the server shows adoptive and foster links as plain "parent"; that shows here as "Not shown". */
+function parentKindsHTML(id) {
+  const rows = parentsOf(id).filter(q => PC_ID.has(q + '>' + id) && !P(q).placeholder).map(q => {
+    const cur = G.pcSub.get(q + '>' + id) || 'biological';
+    const known = PC_KINDS.some(([v]) => v === cur);
+    const opts = (known ? '' : `<option value="" selected>Keep as is</option>`) +
+      PC_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l} parent</option>`).join('');
+    return `<div class="field"><label for="fPk_${esc(q)}">${esc(displayName(P(q)))}</label><select id="fPk_${esc(q)}" data-parent="${esc(q)}" data-was="${known ? cur : ''}">${opts}</select></div>`;
+  });
+  const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
+  return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents</div><div class="row2">${rows.join('')}</div>` +
+    (masked ? '<p class="hint">"Keep as is": while someone is living, whether a parent is by birth, adoption or fostering stays private, so it isn\'t shown here.</p>' : '') : '';
 }
 function fieldsHTML(p, livingV, opts = {}) {
   const nm = namesFromPerson(p);
@@ -947,7 +980,7 @@ function openEdit(id, restore) {
   openPanel(`
     <div class="head"><div><h2>${p.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">${ADMIN_KEY ? 'Owner mode: changes go live right away.' : `Your changes go to ${OWNER_NAME} to confirm. Nobody's entry gets overwritten.`}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
-    <form class="body form" id="editForm" novalidate>${fieldsHTML(p, lv, { edit: true })}</form>
+    <form class="body form" id="editForm" novalidate>${p.pending ? '' : parentKindsHTML(id)}${fieldsHTML(p, lv, { edit: true })}</form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
   wireCommon();
   if (restore) fillForm(restore.fields);
@@ -967,6 +1000,9 @@ function openEdit(id, restore) {
       changes = Object.keys(now).filter(k => now[k] !== was[k])
         .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: k === 'married_names' ? JSON.parse(now[k]) : now[k], source: f.source }));
       if (p.placeholder && (f.first || f.last)) changes.push({ kind: 'suggestion', target_id: id, field: 'is_placeholder', value: false, source: f.source });
+      document.querySelectorAll('#editForm select[data-parent]').forEach(sel => {
+        if (sel.value && sel.value !== sel.dataset.was) changes.push({ kind: 'suggestion', target_id: PC_ID.get(sel.dataset.parent + '>' + id), field: 'subtype', value: sel.value, source: f.source });
+      });
     } catch (err) { formError(err.message); return; }
     if (!changes.length) { formError("Nothing has changed yet."); return; }
     formError(''); busy(true);
@@ -996,15 +1032,22 @@ function openAdd(id, opts = {}) {
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
         ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}"${v === 'parent' && parents.length >= 2 ? ' disabled title="Already has two parents"' : ''}>${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
-      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Former partners</button></div></div>` : ''}
+      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Former partners</button></div></div>
+      <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
+        <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
       <input type="hidden" id="fLink" value="">
     </form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button>${self ? '' : '<button class="iconbtn" id="pMore">Save &amp; add another</button>'}<button class="primary" id="pSave">Save</button></div>`);
+  const syncPcHint = () => { const h = $('#fPcHint'); if (h) h.hidden = !(segVal('fRel') === 'parent' && segVal('fPc') === 'step'); };
+  const pcSub = () => ($('#fPcWrap') && !$('#fPcWrap').hidden && segVal('fPc')) || 'biological';
   const syncRel = v => {
     if (!p) return;
     const ow = $('#fOtherWrap'), kw = $('#fKindWrap');
     ow.hidden = true; kw.hidden = v !== 'partner';
+    $('#fPcWrap').hidden = v !== 'parent' && v !== 'child';
+    $('#fPcLab').textContent = v === 'child' ? `What kind of parent is ${p.first || 'this person'}?` : 'What kind of parent?';
+    syncPcHint();
     const opts = (list, none) => list.map(x => `<option value="${x}">${esc(displayName(P(x)))}</option>`).join('') + `<option value="">${none}</option>`;
     $('#fOther').onchange = null;
     if (v === 'child') {
@@ -1020,7 +1063,7 @@ function openAdd(id, opts = {}) {
       $('#fOther').onchange = () => { kw.hidden = !$('#fOther').value; };
     }
   };
-  if (p) { wireSeg('fRel', syncRel); wireSeg('fKind'); syncRel(rel); }
+  if (p) { wireSeg('fRel', syncRel); wireSeg('fKind'); wireSeg('fPc', syncPcHint); syncRel(rel); }
   wireCommon();
   if (opts.fields) fillForm(opts.fields);
   watchForm('add', id, { self });
@@ -1046,11 +1089,13 @@ function openAdd(id, opts = {}) {
     if (p) {
       const r = segVal('fRel');
       if (r === 'child') {
-        items.push({ kind: 'relationship', type: 'parent_child', a: p.id, b: me, source: f.source });
+        const k = pcSub();
+        items.push({ kind: 'relationship', type: 'parent_child', a: p.id, b: me, subtype: k, source: f.source });
         const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
-        if (other) items.push({ kind: 'relationship', type: 'parent_child', a: other, b: me, source: f.source });
+        // A stepchild is usually their other parent's birth child; adopted or fostered children usually by both.
+        if (other) items.push({ kind: 'relationship', type: 'parent_child', a: other, b: me, subtype: k === 'step' ? 'biological' : k, source: f.source });
       } else if (r === 'parent') {
-        items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, source: f.source });
+        items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, subtype: pcSub(), source: f.source });
         const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
         if (other && other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
       }
@@ -1186,6 +1231,7 @@ function openKey() {
       ${row(keyLine('M46 3 C46 16 46 18 46 31'), 'Parent to child', STATE.rootsBelow ? 'Ink branches above the ground line lead to children and grandchildren.' : 'Ink lines lead down to children and grandchildren.')}
       ${row(keyLine('M46 31 C46 18 46 16 46 3', { color: '#A9822F' }), 'Your roots', STATE.rootsBelow ? 'Gold lines below the ground line lead back to parents, grandparents and further.' : 'Gold lines lead up to parents, grandparents and further back.')}
       ${row(keyLine('M46 31 C46 18 46 16 46 3', { op: .45 }), 'Half sibling', 'A lighter line: they share one parent, not both.')}
+      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '7 4', w: 1.6 }), 'Step, adoptive or foster parent', 'A thinner dashed line. With a birth parent beside them, they share the birth line; the card says Stepmother, Stepchild and so on.')}
       ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4' }), 'Unconfirmed or unknown link', 'Dotted: it leads to someone unconfirmed or unknown.')}
       ${row(keyLine('M6 17 H86', { w: 1.6, extra: RINGS_MARK(46, 17) }), 'Married or partners', 'Their children grow out of the rings.')}
       ${row(keyLine('M6 17 H86', { w: 1.6, dash: '5 5', op: .45, extra: RINGS_MARK(46, 17, .4) }), 'Former partners', 'Divorced or separated. Their children still connect to both.')}

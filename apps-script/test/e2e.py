@@ -174,6 +174,50 @@ async def main():
         check('approved additions reach everyone', any(n.startswith('Walter') for n in snames), snames)
         await sp.screenshot(path=OUT + '04_public.png')
 
+        # ---------- step, adoptive and foster parents ----------
+        await tp.reload(); await wait_api(tp)
+        await tp.locator('.card', has_text='Dana').first.click(); await tp.wait_for_timeout(400)
+        await tp.click('#pAdd'); await tp.wait_for_timeout(300)
+        await tp.locator('#fRel button[data-v="child"]').click()
+        check('child form asks what kind of parent', await tp.is_visible('#fPcWrap') and 'Dana' in await tp.inner_text('#fPcLab'))
+        await tp.locator('#fPc button[data-v="step"]').click()
+        check('step hint only for adding a parent', not await tp.is_visible('#fPcHint'))
+        await tp.fill('#fFirst', 'Max'); await tp.locator('#fLiving button[data-v="living"]').click()
+        await tp.click('#pSave'); await tp.wait_for_timeout(1500); await tp.click('#thanksBack'); await tp.wait_for_timeout(2200)
+        st8 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        P8 = {r[0]: r for r in st8['People'][1:]}
+        mid = next(i for i, r in P8.items() if r[2] == 'Max'); did = next(i for i, r in P8.items() if r[2] == 'Dana')
+        pcs = {(r[3], r[4]): r[5] for r in st8['Relationships'][1:] if r[2] == 'parent_child'}
+        check('stepchild stored as step to Dana, birth to Jonny', pcs.get((did, mid)) == 'step' and pcs.get((jonny_id, mid)) == 'biological', pcs)
+        edge_ids = await tp.eval_on_selector_all('[data-edge]', 'e => e.map(x => x.dataset.edge)') if await tp.locator('[data-edge]').count() else []
+        await tp.locator('.card', has_text='Max').first.click(); await tp.wait_for_timeout(400)
+        check('panel says who the step-parent is', 'is Max\'s step-parent' in await tp.inner_text('#panel'), await tp.inner_text('#panel'))
+        await tp.click('#pClose'); await tp.wait_for_timeout(200)
+        await tp.locator('.card', has_text='Walter').first.click(); await tp.wait_for_timeout(300)
+        await tp.click('#pAdd'); await tp.wait_for_timeout(300); await tp.locator('#fRel button[data-v="parent"]').click()
+        await tp.locator('#fPc button[data-v="step"]').click()
+        check('adding a step-parent warns about the parent spot', await tp.is_visible('#fPcHint'))
+        await tp.locator('#fPc button[data-v="biological"]').click()
+        check('warning goes away for a birth parent', not await tp.is_visible('#fPcHint'))
+        await tp.click('#pClose'); await tp.wait_for_timeout(300)
+        if await tp.locator('#gDiscard').count(): await tp.click('#gDiscard'); await tp.wait_for_timeout(300)
+        # correct an existing link
+        await tp.locator('.card', has_text='Robert').first.click(); await tp.wait_for_timeout(300); await tp.click('#pEdit'); await tp.wait_for_timeout(300)
+        wsel = tp.locator('select[data-parent]', has_text='Birth parent').first
+        check('edit lists the parents with their kind', await tp.locator('select[data-parent]').count() >= 1)
+        await wsel.select_option('adopted'); await tp.click('#pSave'); await tp.wait_for_timeout(1500)
+        await tp.click('#thanksBack'); await tp.wait_for_timeout(2000)
+        st9 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        wid = next(r[0] for r in st9['People'][1:] if r[2] == 'Walter')
+        check('edit changed Walter to adoptive', any(r[2] == 'parent_child' and r[3] == wid and r[4] == robert_id and r[5] == 'adopted' for r in st9['Relationships'][1:]))
+        await tp.locator('.card', has_text='Robert').first.click(); await tp.wait_for_timeout(300)
+        check('panel shows the adoptive parent', "is Robert's adoptive parent" in await tp.inner_text('#panel'))
+        await tp.click('#pClose'); await tp.wait_for_timeout(200)
+        await tp.click('#btnKey'); await tp.wait_for_timeout(300)
+        check('key explains the dashed parent line', 'Step, adoptive or foster parent' in await tp.inner_text('#panel'))
+        await tp.click('#pClose'); await tp.wait_for_timeout(200)
+        await tp.screenshot(path=OUT + '05_kinds.png')
+
         # ---------- pause ----------
         await op.click('#btnPause'); await op.wait_for_timeout(700)
         await rp.reload(); await wait_api(rp)

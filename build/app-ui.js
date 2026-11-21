@@ -50,6 +50,12 @@ function openPerson(id) {
     if (p.notes) body += `<p class="story">${esc(p.notes)}</p>`;
     if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
   }
+  const kindWords = { step: 'step-parent', adopted: 'adoptive parent', foster: 'foster parent' };
+  const kinLines = [
+    ...parentsOf(id).filter(q => kindWords[G.pcSub.get(q + '>' + id)]).map(q => `${esc(displayName(P(q)))} is ${esc(p.first || 'their')}'s ${kindWords[G.pcSub.get(q + '>' + id)]}.`),
+    ...childrenOf(id).filter(c => kindWords[G.pcSub.get(id + '>' + c)]).map(c => `${esc(p.first || 'They')} is ${esc(displayName(P(c)))}'s ${kindWords[G.pcSub.get(id + '>' + c)]}.`)
+  ];
+  if (kinLines.length && !p.placeholder) body += `<p class="kinline">${kinLines.join(' ')}</p>`;
   if (twice) body += `<div class="twicebox">${ICON.rings}<span>Related twice: ${esc(p.first)} and ${esc(P(twice.partner).first)} both descend from ${esc(displayName(P(twice.ancestor)))}.</span></div>`;
   if (p.pending) body += `<div class="private"><span>You added ${esc(p.first || 'this')}. ${OWNER_NAME} hasn't confirmed it yet, so only you can see it.</span></div>`;
   if (!p.placeholder && !p.pending) {
@@ -104,6 +110,21 @@ function namesToData(now, birth, othersText) {
 function namesFromPerson(p) {
   const married = p.married || [];
   return { last: p.last || '', birthName: married.length ? (p.birthSurname || '') : '', otherNames: married.slice(0, -1).join(', ') };
+}
+const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
+/* In the edit form: one row per confirmed parent link, so a parent can be marked step, adoptive or foster later.
+   For living people the server shows adoptive and foster links as plain "parent"; that shows here as "Not shown". */
+function parentKindsHTML(id) {
+  const rows = parentsOf(id).filter(q => PC_ID.has(q + '>' + id) && !P(q).placeholder).map(q => {
+    const cur = G.pcSub.get(q + '>' + id) || 'biological';
+    const known = PC_KINDS.some(([v]) => v === cur);
+    const opts = (known ? '' : `<option value="" selected>Keep as is</option>`) +
+      PC_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l} parent</option>`).join('');
+    return `<div class="field"><label for="fPk_${esc(q)}">${esc(displayName(P(q)))}</label><select id="fPk_${esc(q)}" data-parent="${esc(q)}" data-was="${known ? cur : ''}">${opts}</select></div>`;
+  });
+  const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
+  return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents</div><div class="row2">${rows.join('')}</div>` +
+    (masked ? '<p class="hint">"Keep as is": while someone is living, whether a parent is by birth, adoption or fostering stays private, so it isn\'t shown here.</p>' : '') : '';
 }
 function fieldsHTML(p, livingV, opts = {}) {
   const nm = namesFromPerson(p);
@@ -222,7 +243,7 @@ function openEdit(id, restore) {
   openPanel(`
     <div class="head"><div><h2>${p.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">${ADMIN_KEY ? 'Owner mode: changes go live right away.' : `Your changes go to ${OWNER_NAME} to confirm. Nobody's entry gets overwritten.`}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
-    <form class="body form" id="editForm" novalidate>${fieldsHTML(p, lv, { edit: true })}</form>
+    <form class="body form" id="editForm" novalidate>${p.pending ? '' : parentKindsHTML(id)}${fieldsHTML(p, lv, { edit: true })}</form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
   wireCommon();
   if (restore) fillForm(restore.fields);
@@ -242,6 +263,9 @@ function openEdit(id, restore) {
       changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))
         .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: k === 'married_names' ? JSON.parse(now[k]) : now[k], source: f.source }));
       if (p.placeholder && (f.first || f.last)) changes.push({ kind: 'suggestion', target_id: id, field: 'is_placeholder', value: false, source: f.source });
+      document.querySelectorAll('#editForm select[data-parent]').forEach(sel => {
+        if (sel.value && sel.value !== sel.dataset.was) changes.push({ kind: 'suggestion', target_id: PC_ID.get(sel.dataset.parent + '>' + id), field: 'subtype', value: sel.value, source: f.source });
+      });
     } catch (err) { formError(err.message); return; }
     if (!changes.length) { formError("Nothing has changed yet."); return; }
     formError(''); busy(true);
@@ -271,15 +295,22 @@ function openAdd(id, opts = {}) {
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
         ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}"${v === 'parent' && parents.length >= 2 ? ' disabled title="Already has two parents"' : ''}>${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
-      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Former partners</button></div></div>` : ''}
+      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Former partners</button></div></div>
+      <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
+        <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
       <input type="hidden" id="fLink" value="">
     </form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button>${self ? '' : '<button class="iconbtn" id="pMore">Save &amp; add another</button>'}<button class="primary" id="pSave">Save</button></div>`);
+  const syncPcHint = () => { const h = $('#fPcHint'); if (h) h.hidden = !(segVal('fRel') === 'parent' && segVal('fPc') === 'step'); };
+  const pcSub = () => ($('#fPcWrap') && !$('#fPcWrap').hidden && segVal('fPc')) || 'biological';
   const syncRel = v => {
     if (!p) return;
     const ow = $('#fOtherWrap'), kw = $('#fKindWrap');
     ow.hidden = true; kw.hidden = v !== 'partner';
+    $('#fPcWrap').hidden = v !== 'parent' && v !== 'child';
+    $('#fPcLab').textContent = v === 'child' ? `What kind of parent is ${p.first || 'this person'}?` : 'What kind of parent?';
+    syncPcHint();
     const opts = (list, none) => list.map(x => `<option value="${x}">${esc(displayName(P(x)))}</option>`).join('') + `<option value="">${none}</option>`;
     $('#fOther').onchange = null;
     if (v === 'child') {
@@ -295,7 +326,7 @@ function openAdd(id, opts = {}) {
       $('#fOther').onchange = () => { kw.hidden = !$('#fOther').value; };
     }
   };
-  if (p) { wireSeg('fRel', syncRel); wireSeg('fKind'); syncRel(rel); }
+  if (p) { wireSeg('fRel', syncRel); wireSeg('fKind'); wireSeg('fPc', syncPcHint); syncRel(rel); }
   wireCommon();
   if (opts.fields) fillForm(opts.fields);
   watchForm('add', id, { self });
@@ -321,11 +352,13 @@ function openAdd(id, opts = {}) {
     if (p) {
       const r = segVal('fRel');
       if (r === 'child') {
-        items.push({ kind: 'relationship', type: 'parent_child', a: p.id, b: me, source: f.source });
+        const k = pcSub();
+        items.push({ kind: 'relationship', type: 'parent_child', a: p.id, b: me, subtype: k, source: f.source });
         const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
-        if (other) items.push({ kind: 'relationship', type: 'parent_child', a: other, b: me, source: f.source });
+        // A stepchild is usually their other parent's birth child; adopted or fostered children usually by both.
+        if (other) items.push({ kind: 'relationship', type: 'parent_child', a: other, b: me, subtype: k === 'step' ? 'biological' : k, source: f.source });
       } else if (r === 'parent') {
-        items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, source: f.source });
+        items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, subtype: pcSub(), source: f.source });
         const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
         if (other && other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
       }

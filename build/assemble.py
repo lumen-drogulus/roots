@@ -42,6 +42,25 @@ engine = rep(engine, "const STATE = { viewer: SAMPLE.viewer, focus: SAMPLE.viewe
 engine = rep(engine, "  const v = STATE.viewer;\n  if (id === v) return 'You';", "  const v = STATE.viewer;\n  if (!v) return '';\n  if (id === v) return 'You';")
 engine = rep(engine, "$('#btnHome').onclick = () => { closePanel(); STATE.focus = STATE.viewer; render(); };\n", "")
 engine = rep(engine, "function render(opts = {}) {\n", "function render(opts = {}) {\n  if (!STATE.focus || !G.people.has(STATE.focus)) return;\n")
+# Step, adoptive and foster parents: labels, separate lines, thinner dashed style.
+engine = rep(engine, "const parentsOf = id => G.parents.get(id) || [];",
+  "const parentsOf = id => G.parents.get(id) || [];\nconst pcKind = (a, b) => { const s = G.pcSub.get(a + '>' + b); return s === 'step' || s === 'adopted' || s === 'foster' ? s : ''; };")
+engine = rep(engine, "  if (/^U+$/.test(path)) {",
+  """  if (path === 'U' || path === 'D') {
+    const k = path === 'U' ? pcKind(id, v) : pcKind(v, id);
+    if (k === 'step') return path === 'U' ? w('Stepfather', 'Stepmother', 'Step-parent') : w('Stepson', 'Stepdaughter', 'Stepchild');
+    if (k === 'adopted') return path === 'U' ? w('Adoptive father', 'Adoptive mother', 'Adoptive parent') : w('Adopted son', 'Adopted daughter', 'Adopted child');
+    if (k === 'foster') return path === 'U' ? w('Foster father', 'Foster mother', 'Foster parent') : w('Foster son', 'Foster daughter', 'Foster child');
+  }
+  if (/^U+$/.test(path)) {""")
+engine = rep(engine, "    const couple = pars.length === 2 && partnersOf(pars[0]).some(x => x.id === pars[1]);",
+  "    // A couple shares one line from their rings, even when one is a step-parent (separate lines cross the other children's).\n    const couple = pars.length === 2 && partnersOf(pars[0]).some(x => x.id === pars[1]);")
+engine = rep(engine, "      half: gp.length === 1 && parentsOf(n.id).length === 2 }));",
+  "      half: gp.length === 1 && parentsOf(n.id).length === 2 && parentsOf(n.id).every(x => !pcKind(x, n.id)) }));")
+engine = rep(engine, "    r.dash = e.pending || P(e.child).placeholder || e.parents.some(x => P(x).placeholder) ? '0.02 0.03' : null;",
+  "    const nonBirth = e.parents.every(x => pcKind(x, e.child));\n    if (nonBirth) el.style.strokeWidth = Math.max(1.1, (3.4 - gen * 0.55) * 0.6);\n    r.dash = e.pending || P(e.child).placeholder || e.parents.some(x => P(x).placeholder) ? '0.02 0.03' : nonBirth ? '0.07 0.045' : null;")
+keyjs = rep(keyjs, "      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4' }),",
+  "      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '7 4', w: 1.6 }), 'Step, adoptive or foster parent', 'A thinner dashed line. With a birth parent beside them, they share the birth line; the card says Stepmother, Stepchild and so on.')}\n      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4' }),")
 ui = open('build/app-ui.js').read()
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
 app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-boot.js').read()
