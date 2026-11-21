@@ -1087,10 +1087,11 @@ function openAdd(id, opts = {}) {
     <form class="body form" id="addForm" novalidate>
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
         ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
+      <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
+        <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
       <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
-      <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
-        <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>` : ''}
+` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
       <input type="hidden" id="fLink" value="">
     </form>
@@ -1113,7 +1114,7 @@ function openAdd(id, opts = {}) {
     $('#fOther').onchange = null; ow.hidden = true;
     if (step && parents.length) {
       $('#fOtherLab').textContent = 'Married to';
-      $('#fOther').innerHTML = optsOf(parents, full ? '' : 'Neither, or not sure');
+      $('#fOther').innerHTML = (full ? '<option value="" disabled selected>Choose one</option>' : '') + optsOf(parents, full ? '' : 'Neither, or not sure');
       ow.hidden = false; kw.hidden = !$('#fOther').value;
       $('#fOther').onchange = () => { kw.hidden = !$('#fOther').value; };
       h.textContent = full
@@ -1193,7 +1194,7 @@ function openAdd(id, opts = {}) {
           // Stored as the parent's partner; the tree works out "Stepfather" from that.
           if (other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
         } else {
-          if (full) throw new Error('Two parents are already here. Choose Step and who they were married to.');
+          if (full) throw new Error(k === 'step' ? 'Choose who they were married to.' : 'Two parents are already here. Choose Step and who they were married to.');
           items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, subtype: k, source: f.source });
           if (other && other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
         }
