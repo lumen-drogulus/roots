@@ -65,6 +65,8 @@ keyjs = rep(keyjs, "      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4
 engine = rep(engine, "function displayName(p) {",
   "function cardName(p) {\n  if (p.placeholder) return 'Unknown';\n  const nick = (p.nicknames || '').split(',')[0].trim();\n  const mid = nick && !sameNameE(nick, p.first) ? `\"${nick}\"` : p.middle ? p.middle.trim()[0] + '.' : '';\n  return [p.first, mid, p.last].filter(Boolean).join(' ');\n}\nconst sameNameE = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();\nfunction displayName(p) {")
 engine = rep(engine, "<span class=\"nm\">${p.placeholder ? 'Unknown' : esc(displayName(p))}</span>", "<span class=\"nm\">${esc(cardName(p))}</span>")
+# A parent's other partner is a step-parent to the centered person: show them, don't fold them into a bud.
+engine = rep(engine, "if (others.length) { if (isOpen('op:' + id)) t.extras.push(", "if (others.length) { if (depth === 1 || isOpen('op:' + id)) t.extras.push(")
 ui = open('build/app-ui.js').read()
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
 app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-boot.js').read()

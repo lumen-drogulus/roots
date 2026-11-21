@@ -251,3 +251,5 @@ button:disabled { opacity: .55; cursor: progress; }
 .namerow .rm { width: 44px; border-radius: 12px; border: 1px solid rgba(29,43,36,.18); background: transparent; font-size: 20px; color: var(--ink-soft, #4A564F); cursor: pointer; }
 .facts .muted { color: var(--ink-soft, #4A564F); font-size: .92em; }
 .facts a[data-goto] { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+.seg button.off { opacity: .4; }

@@ -341,7 +341,7 @@ function openAdd(id, opts = {}) {
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <form class="body form" id="addForm" novalidate>
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
-        ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}"${v === 'parent' && parents.length >= 2 ? ' disabled title="Already has two parents"' : ''}>${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
+        ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
       <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
       <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
@@ -350,31 +350,67 @@ function openAdd(id, opts = {}) {
       <input type="hidden" id="fLink" value="">
     </form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button>${self ? '' : '<button class="iconbtn" id="pMore">Save &amp; add another</button>'}<button class="primary" id="pSave">Save</button></div>`);
-  const syncPcHint = () => { const h = $('#fPcHint'); if (h) h.hidden = !(segVal('fRel') === 'parent' && segVal('fPc') === 'step'); };
+  /* Parents. Two birth parents fill a person's two spots. A step-parent is stored as the partner of a parent
+     (the tree then labels them Stepfather or Stepmother), so the birth parents keep their spots. With both spots
+     taken, only Step can be chosen; Birth, Adoptive and Foster are grayed out. */
+  const full = parents.length >= 2;
   const pcSub = () => ($('#fPcWrap') && !$('#fPcWrap').hidden && segVal('fPc')) || 'biological';
+  const optsOf = (list, none) => list.map(x => `<option value="${x}">${esc(displayName(P(x)))}</option>`).join('') + (none ? `<option value="">${none}</option>` : '');
+  const syncParent = () => {
+    const ow = $('#fOtherWrap'), kw = $('#fKindWrap'), h = $('#fPcHint');
+    if (segVal('fRel') !== 'parent') { if (h) h.hidden = true; return; }
+    document.querySelectorAll('#fPc button').forEach(b => {
+      const off = full && b.dataset.v !== 'step';
+      b.classList.toggle('off', off); b.setAttribute('aria-disabled', off ? 'true' : 'false');
+    });
+    if (full && segVal('fPc') !== 'step') document.querySelectorAll('#fPc button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === 'step'));
+    const step = segVal('fPc') === 'step';
+    $('#fOther').onchange = null; ow.hidden = true;
+    if (step && parents.length) {
+      $('#fOtherLab').textContent = 'Married to';
+      $('#fOther').innerHTML = optsOf(parents, full ? '' : 'Neither, or not sure');
+      ow.hidden = false; kw.hidden = !$('#fOther').value;
+      $('#fOther').onchange = () => { kw.hidden = !$('#fOther').value; };
+      h.textContent = full
+        ? `${p.first || 'They'} already ${self ? 'have' : 'has'} two birth parents here, so a step-parent is linked through their marriage to one of them. The tree labels them Stepfather or Stepmother.`
+        : 'Linked through their marriage, so the birth parent keeps their place. Choose "Neither" only if they weren\'t married to a parent in the tree.';
+      h.hidden = false;
+    } else if (parents.length) {
+      $('#fOtherLab').textContent = 'Together with';
+      $('#fOther').innerHTML = optsOf(parents, 'Neither, or not sure');
+      if (parents.length > 1) $('#fOther').value = '';
+      ow.hidden = false; kw.hidden = !$('#fOther').value;
+      $('#fOther').onchange = () => { kw.hidden = !$('#fOther').value; };
+      h.hidden = true;
+    } else {
+      h.textContent = 'This takes one of the two parent spots. If the birth parent might be added later, add the step-parent as that parent\'s partner instead.';
+      h.hidden = !step;
+    }
+  };
   const syncRel = v => {
     if (!p) return;
     const ow = $('#fOtherWrap'), kw = $('#fKindWrap');
     ow.hidden = true; kw.hidden = v !== 'partner';
     $('#fPcWrap').hidden = v !== 'parent' && v !== 'child';
     $('#fPcLab').textContent = v === 'child' ? `What kind of parent is ${p.first || 'this person'}?` : 'What kind of parent?';
-    syncPcHint();
-    const opts = (list, none) => list.map(x => `<option value="${x}">${esc(displayName(P(x)))}</option>`).join('') + `<option value="">${none}</option>`;
+    document.querySelectorAll('#fPc button').forEach(b => { b.classList.remove('off'); b.setAttribute('aria-disabled', 'false'); });
     $('#fOther').onchange = null;
     if (v === 'child') {
       // Who else is this child's parent? Defaults to the current partner.
       const prts = partnersOf(p.id).map(x => x.id);
-      if (prts.length) { $('#fOtherLab').textContent = 'Their other parent'; $('#fOther').innerHTML = opts(prts, 'Someone else, or not sure'); ow.hidden = false; }
-    } else if (v === 'parent' && parents.length) {
-      // A second parent: were they a couple with the parent already here?
-      $('#fOtherLab').textContent = 'Together with';
-      $('#fOther').innerHTML = opts(parents, 'Neither, or not sure');
-      if (parents.length > 1) $('#fOther').value = '';
-      ow.hidden = false; kw.hidden = !$('#fOther').value;
-      $('#fOther').onchange = () => { kw.hidden = !$('#fOther').value; };
+      if (prts.length) { $('#fOtherLab').textContent = 'Their other parent'; $('#fOther').innerHTML = optsOf(prts, 'Someone else, or not sure'); ow.hidden = false; }
     }
+    syncParent();
   };
-  if (p) { wireSeg('fRel', syncRel); wireSeg('fKind'); wireSeg('fPc', syncPcHint); syncRel(rel); }
+  if (p) {
+    wireSeg('fRel', syncRel); wireSeg('fKind'); wireSeg('fPc', syncParent);
+    // Grayed kinds explain themselves instead of doing nothing.
+    document.querySelectorAll('#fPc button').forEach(b => { const on = b.onclick; b.onclick = () => {
+      if (b.classList.contains('off')) { toast(`${p.first || 'They'} already ${self ? 'have' : 'has'} two birth parents. Choose Step.`); return; }
+      on();
+    }; });
+    syncRel(rel);
+  }
   wireCommon();
   if (opts.fields) fillForm(opts.fields);
   watchForm('add', id, { self });
@@ -406,9 +442,16 @@ function openAdd(id, opts = {}) {
         // A stepchild is usually their other parent's birth child; adopted or fostered children usually by both.
         if (other) items.push({ kind: 'relationship', type: 'parent_child', a: other, b: me, subtype: k === 'step' ? 'biological' : k, source: f.source });
       } else if (r === 'parent') {
-        items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, subtype: pcSub(), source: f.source });
+        const k = pcSub();
         const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
-        if (other && other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+        if (k === 'step' && other) {
+          // Stored as the parent's partner; the tree works out "Stepfather" from that.
+          if (other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+        } else {
+          if (full) throw new Error('Two parents are already here. Choose Step and who they were married to.');
+          items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, subtype: k, source: f.source });
+          if (other && other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+        }
       }
       else if (r === 'partner') items.push({ kind: 'relationship', type: 'partner', a: p.id, b: me, subtype: segVal('fKind') || 'married', source: f.source });
       else if (r === 'sibling') {

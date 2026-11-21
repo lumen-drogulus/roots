@@ -245,6 +245,25 @@ async def main():
         await tp.click('#btnSend') if False else None
         lbl = await tp.locator('#fSource').count()
 
+        # ---------- step-parent from the child's own card when both parent spots are taken ----------
+        await tp.locator('.card.focus').click(); await tp.wait_for_timeout(300); await tp.click('#pAdd'); await tp.wait_for_timeout(300)
+        await tp.locator('#fRel button[data-v="parent"]').click(); await tp.wait_for_timeout(200)
+        check('parent stays available with two parents', await tp.get_attribute('#fRel button[data-v="parent"]', 'aria-pressed') == 'true')
+        check('birth, adoptive, foster grayed; step chosen', await tp.get_attribute('#fPc button[data-v="biological"]', 'aria-disabled') == 'true' and await tp.get_attribute('#fPc button[data-v="step"]', 'aria-pressed') == 'true')
+        await tp.locator('#fPc button[data-v="biological"]').click(force=True); await tp.wait_for_timeout(200)
+        check('tapping a grayed kind keeps step', await tp.get_attribute('#fPc button[data-v="step"]', 'aria-pressed') == 'true')
+        check('asks who the step-parent married', await tp.is_visible('#fOtherWrap') and 'Married to' in await tp.inner_text('#fOtherLab') and 'Neither' not in await tp.inner_text('#fOther'))
+        await tp.select_option('#fOther', label='Joan Ruzicka'); await tp.wait_for_timeout(100)
+        await tp.fill('#fFirst', 'Gary'); await tp.fill('#fLast', 'Pike'); await tp.locator('#fLiving button[data-v="living"]').click()
+        await tp.click('#pSave'); await tp.wait_for_timeout(1500); await tp.click('#thanksBack'); await tp.wait_for_timeout(2000)
+        st11 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        gid = next(r[0] for r in st11['People'][1:] if r[2] == 'Gary')
+        check('step-parent stored as Joan\'s partner, no extra parent link', any(r[2] == 'partner' and {r[3], r[4]} == {jid, gid} for r in st11['Relationships'][1:]) and not any(r[2] == 'parent_child' and r[3] == gid for r in st11['Relationships'][1:]))
+        lab = await tp.eval_on_selector_all('.card', 'e => e.map(x => x.getAttribute("aria-label"))')
+        bud = await tp.locator('.bud').count()
+        check('Gary shows on the tree as step-parent, not folded', any(l and l.startswith('Gary') and 'Step-parent' in l for l in lab), lab)
+        await tp.screenshot(path=OUT + '06_stepparent.png')
+
         # ---------- pause ----------
         await op.click('#btnPause'); await op.wait_for_timeout(700)
         await rp.reload(); await wait_api(rp)
