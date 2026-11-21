@@ -335,6 +335,8 @@ function openAdd(id, opts = {}) {
   const done = sessionAdded.length;
   const relWord = p ? (self ? 'You are ' : 'They are ') + esc(p.first || 'this person') + "'s" : '';
   const parents = p ? parentsOf(p.id) : [];
+  // Step-parents of p: partners of p's parents who aren't p's parents.
+  const stepParents = p ? [...new Set(parents.flatMap(pp => partnersOf(pp).map(x => x.id)))].filter(sp => !parents.includes(sp) && !P(sp).placeholder) : [];
   openPanel(`
     <div class="head"><div><h2>${self ? 'Add yourself' : `Add someone to ${esc(p.placeholder ? 'this branch' : p.first + "'s branch")}`}</h2>
       <div class="sub">${done ? `${done} saved so far. Keep going, or tap Save on the last one.` : self ? 'Start with your name. You can add more later.' : 'Add who you know, including relatives who have died.'}</div></div>
@@ -342,6 +344,8 @@ function openAdd(id, opts = {}) {
     <form class="body form" id="addForm" novalidate>
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
         ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
+      <div class="field" id="fSibWrap" hidden><span class="lab">What kind of sibling?</span><div class="seg" id="fSib"><button type="button" data-v="full" aria-pressed="true">Full</button><button type="button" data-v="half" aria-pressed="false">Half</button><button type="button" data-v="step" aria-pressed="false">Step</button></div></div>
+      <div class="field" id="fSibParWrap" hidden><label for="fSibPar" id="fSibParLab">Which parent do you share?</label><select id="fSibPar"></select><p class="hint" id="fSibHint" hidden></p></div>
       <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
         <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
@@ -388,6 +392,28 @@ function openAdd(id, opts = {}) {
       h.hidden = !step;
     }
   };
+  /* Siblings: Full links to all of p's parents; Half to the one parent they share; Step to one of p's step-parents. */
+  const syncSib = () => {
+    const on = segVal('fRel') === 'sibling';
+    $('#fSibWrap').hidden = !on;
+    const k = segVal('fSib'), wrap = $('#fSibParWrap'), sel = $('#fSibPar'), h = $('#fSibHint');
+    wrap.hidden = !on || k === 'full'; h.hidden = true;
+    if (!on || k === 'full') return;
+    const who = self ? 'you' : (p.first || 'they');
+    if (k === 'half') {
+      $('#fSibParLab').textContent = self ? 'Which parent do you share?' : `Which of ${p.first || 'their'}'s parents do they share?`;
+      sel.innerHTML = parents.map(x => `<option value="${x}">${esc(displayName(P(x)))}</option>`).join('');
+      sel.hidden = !parents.length;
+      if (!parents.length) { h.textContent = `Add the parent ${who} share first (Parent on this card), then come back for the half-sibling.`; h.hidden = false; }
+    } else {
+      $('#fSibParLab').textContent = 'Whose child are they?';
+      sel.innerHTML = stepParents.map(x => `<option value="${x}">${esc(displayName(P(x)))}</option>`).join('');
+      sel.hidden = !stepParents.length;
+      h.textContent = stepParents.length ? 'Step-siblings are linked through their own parent, so the tree can show them beside the step-parent.'
+        : `Add the step-parent first (Parent > Step on this card), then come back for their children.`;
+      h.hidden = false;
+    }
+  };
   const syncRel = v => {
     if (!p) return;
     const ow = $('#fOtherWrap'), kw = $('#fKindWrap');
@@ -402,9 +428,10 @@ function openAdd(id, opts = {}) {
       if (prts.length) { $('#fOtherLab').textContent = 'Their other parent'; $('#fOther').innerHTML = optsOf(prts, 'Someone else, or not sure'); ow.hidden = false; }
     }
     syncParent();
+    syncSib();
   };
   if (p) {
-    wireSeg('fRel', syncRel); wireSeg('fKind'); wireSeg('fPc', syncParent);
+    wireSeg('fRel', syncRel); wireSeg('fKind'); wireSeg('fPc', syncParent); wireSeg('fSib', syncSib);
     // Grayed kinds explain themselves instead of doing nothing.
     document.querySelectorAll('#fPc button').forEach(b => { const on = b.onclick; b.onclick = () => {
       if (b.classList.contains('off')) { toast(`${p.first || 'They'} already ${self ? 'have' : 'has'} two birth parents. Choose Step.`); return; }
@@ -455,6 +482,21 @@ function openAdd(id, opts = {}) {
         }
       }
       else if (r === 'partner') items.push({ kind: 'relationship', type: 'partner', a: p.id, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+      else if (r === 'sibling' && segVal('fSib') === 'half') {
+        const shared = $('#fSibPar').value;
+        if (!shared) throw new Error('Add the parent they share first, then add the half-sibling.');
+        items.push({ kind: 'relationship', type: 'parent_child', a: shared, b: me, source: f.source });
+        if (parents.length < 2 && !link) {
+          // With only one parent recorded, an unknown other parent keeps them a half-sibling rather than a full one.
+          items.push({ kind: 'person', ref: 'new:hp', data: { is_placeholder: true } });
+          items.push({ kind: 'relationship', type: 'parent_child', a: 'new:hp', b: me });
+        }
+      }
+      else if (r === 'sibling' && segVal('fSib') === 'step') {
+        const sp = $('#fSibPar').value;
+        if (!sp) throw new Error('Add the step-parent first, then add their children.');
+        items.push({ kind: 'relationship', type: 'parent_child', a: sp, b: me, source: f.source });
+      }
       else if (r === 'sibling') {
         if (parents.length) parents.forEach(pp => items.push({ kind: 'relationship', type: 'parent_child', a: pp, b: me, source: f.source }));
         else {

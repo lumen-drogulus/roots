@@ -266,6 +266,44 @@ async def main():
         check('Gary shows on the tree as step-parent, not folded', any(l and l.startswith('Gary') and 'Step-parent' in l for l in lab), lab)
         await tp.screenshot(path=OUT + '06_stepparent.png')
 
+        # ---------- half and step siblings ----------
+        async def add_sib(card, kind, first, pick=None):
+            await tp.locator('.card', has_text=card).first.click(); await tp.wait_for_timeout(300); await tp.click('#pAdd'); await tp.wait_for_timeout(300)
+            await tp.locator('#fRel button[data-v="sibling"]').click(); await tp.wait_for_timeout(100)
+            await tp.locator(f'#fSib button[data-v="{kind}"]').click(); await tp.wait_for_timeout(100)
+            if pick: await tp.select_option('#fSibPar', label=pick)
+            await tp.fill('#fFirst', first); await tp.locator('#fLiving button[data-v="living"]').click()
+        await tp.locator('.card.focus').click(); await tp.wait_for_timeout(300); await tp.click('#pAdd'); await tp.wait_for_timeout(300)
+        await tp.locator('#fRel button[data-v="sibling"]').click(); await tp.wait_for_timeout(100)
+        check('sibling asks full, half or step', await tp.is_visible('#fSibWrap') and not await tp.is_visible('#fSibParWrap'))
+        await tp.click('#pClose'); await tp.wait_for_timeout(200)
+        if await tp.locator('#gDiscard').count(): await tp.click('#gDiscard'); await tp.wait_for_timeout(300)
+        await add_sib('Jonny', 'half', 'Hal', 'Robert Ruzicka')
+        await tp.click('#pSave'); await tp.wait_for_timeout(1500); await tp.click('#thanksBack'); await tp.wait_for_timeout(2000)
+        await add_sib('Jonny', 'step', 'Stella', 'Gary Pike')
+        await tp.click('#pSave'); await tp.wait_for_timeout(1500); await tp.click('#thanksBack'); await tp.wait_for_timeout(2200)
+        st12 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        P12 = {r[2]: r[0] for r in st12['People'][1:] if r[2]}
+        pcs12 = [(r[3], r[4]) for r in st12['Relationships'][1:] if r[2] == 'parent_child']
+        check('half-sibling linked to the shared parent only', (P12['Robert'], P12['Hal']) in pcs12 and (P12['Joan'], P12['Hal']) not in pcs12)
+        check('step-sibling linked to the step-parent only', (P12['Gary'], P12['Stella']) in pcs12 and not any(b == P12['Stella'] and a in (P12['Robert'], P12['Joan']) for a, b in pcs12))
+        lab12 = await tp.eval_on_selector_all('.card', 'e => e.map(x => x.getAttribute("aria-label"))')
+        check('half-sibling labeled', any(l and l.startswith('Hal') and 'Half-sibling' in l for l in lab12), lab12)
+        check('step-sibling shows on the tree, labeled', any(l and l.startswith('Stella') and 'Step-sibling' in l for l in lab12), lab12)
+        await tp.screenshot(path=OUT + '07_siblings.png')
+        # step with no step-parents explains itself
+        await tp.locator('.card', has_text='Dana').first.click(); await tp.wait_for_timeout(300); await tp.click('#pAdd'); await tp.wait_for_timeout(300)
+        await tp.locator('#fRel button[data-v="sibling"]').click(); await tp.locator('#fSib button[data-v="step"]').click(); await tp.wait_for_timeout(100)
+        check('no step-parent yet: says to add one first', 'Add the step-parent first' in await tp.inner_text('#fSibHint') and not await tp.is_visible('#fSibPar'))
+        await tp.click('#pClose'); await tp.wait_for_timeout(200)
+        if await tp.locator('#gDiscard').count(): await tp.click('#gDiscard'); await tp.wait_for_timeout(300)
+        # half-sibling of someone with one recorded parent stays half
+        await add_sib('Robert', 'half', 'Hank', 'Walter')
+        await tp.click('#pSave'); await tp.wait_for_timeout(1500); await tp.click('#thanksBack'); await tp.wait_for_timeout(1500)
+        st13 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        hank = next(r[0] for r in st13['People'][1:] if r[2] == 'Hank')
+        check('one-parent half-sibling gets an unknown other parent', sum(1 for r in st13['Relationships'][1:] if r[2] == 'parent_child' and r[4] == hank) == 2)
+
         # ---------- pause ----------
         await op.click('#btnPause'); await op.wait_for_timeout(700)
         await rp.reload(); await wait_api(rp)

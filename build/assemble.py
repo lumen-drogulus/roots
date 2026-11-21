@@ -56,7 +56,7 @@ engine = rep(engine, "  if (/^U+$/.test(path)) {",
 engine = rep(engine, "    const couple = pars.length === 2 && partnersOf(pars[0]).some(x => x.id === pars[1]);",
   "    // A couple shares one line from their rings, even when one is a step-parent (separate lines cross the other children's).\n    const couple = pars.length === 2 && partnersOf(pars[0]).some(x => x.id === pars[1]);")
 engine = rep(engine, "      half: gp.length === 1 && parentsOf(n.id).length === 2 }));",
-  "      half: gp.length === 1 && parentsOf(n.id).length === 2 && parentsOf(n.id).every(x => !pcKind(x, n.id)) }));")
+  "      half: (gp.length === 1 && parentsOf(n.id).length === 2 && parentsOf(n.id).every(x => !pcKind(x, n.id))) || !!n.half }));")
 engine = rep(engine, "    r.dash = e.pending || P(e.child).placeholder || e.parents.some(x => P(x).placeholder) ? '0.02 0.03' : null;",
   "    const nonBirth = e.parents.every(x => pcKind(x, e.child));\n    if (nonBirth) el.style.strokeWidth = Math.max(1.1, (3.4 - gen * 0.55) * 0.6);\n    r.dash = e.pending || P(e.child).placeholder || e.parents.some(x => P(x).placeholder) ? '0.02 0.03' : nonBirth ? '0.07 0.045' : null;")
 keyjs = rep(keyjs, "      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4' }),",
@@ -67,6 +67,25 @@ engine = rep(engine, "function displayName(p) {",
 engine = rep(engine, "<span class=\"nm\">${p.placeholder ? 'Unknown' : esc(displayName(p))}</span>", "<span class=\"nm\">${esc(cardName(p))}</span>")
 # A parent's other partner is a step-parent to the centered person: show them, don't fold them into a bud.
 engine = rep(engine, "if (others.length) { if (isOpen('op:' + id)) t.extras.push(", "if (others.length) { if (depth === 1 || isOpen('op:' + id)) t.extras.push(")
+# Step-siblings: a step-parent's other children. Labeled, and placed beside that step-parent's side of the tree.
+engine = rep(engine, "  if (path === 'UP') return w('Stepfather', 'Stepmother', 'Step-parent');",
+  "  if (path === 'UP') return w('Stepfather', 'Stepmother', 'Step-parent');\n  if (path === 'UPD' && !siblingsOf(v).some(x => x.id === id)) return w('Stepbrother', 'Stepsister', 'Step-sibling');")
+engine = rep(engine, "  /* ---- married-in families (partners of the centered person and of their children) ---- */",
+  """  /* ---- step-siblings: children of the centered person's step-parents, on that step-parent's side ---- */
+  {
+    const mine = parentsOf(F);
+    const steps = [...new Set(mine.flatMap(pp => partnersOf(pp).map(x => x.id)))].filter(sp => !mine.includes(sp) && nodes.has(sp));
+    for (const sp of steps) {
+      const kids = childrenOf(sp).filter(c => c !== F && !nodes.has(c) && !parentsOf(c).some(x => mine.includes(x)));
+      if (!kids.length) continue;
+      const dir = nodes.get(sp).x >= 0 ? 1 : -1;
+      let kx = nodes.get(sp).x;
+      const block = kids.map(k => { const n = { id: k, x: kx, y: 0, g: 0, kind: 'person', sibling: true }; kx += dir * (CW + GAP); return n; });
+      placeBlock(block, dir);
+    }
+  }
+
+  /* ---- married-in families (partners of the centered person and of their children) ---- */""")
 ui = open('build/app-ui.js').read()
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
 app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-boot.js').read()
