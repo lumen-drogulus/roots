@@ -33,3 +33,10 @@ button:disabled { opacity: .55; cursor: progress; }
 .morelink { align-self: flex-start; background: none; border: 0; padding: 2px 0; margin-top: -6px; font: inherit; font-size: 14px; color: var(--year, #8A6A22); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
 .kinline { margin: 0; font-size: 14.5px; color: var(--ink-soft, #4A564F); }
+
+.namesmore { display: flex; flex-direction: column; gap: 14px; }
+.namerow { display: flex; gap: 8px; margin-bottom: 8px; }
+.namerow input { flex: 1; }
+.namerow .rm { width: 44px; border-radius: 12px; border: 1px solid rgba(29,43,36,.18); background: transparent; font-size: 20px; color: var(--ink-soft, #4A564F); cursor: pointer; }
+.facts .muted { color: var(--ink-soft, #4A564F); font-size: .92em; }
+.facts a[data-goto] { color: inherit; text-decoration: underline; text-underline-offset: 2px; }

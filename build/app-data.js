@@ -76,6 +76,7 @@ function fuzzyToText(s) { const f = parseFuzzy(s); if (!f) return ''; if (f.q !=
  * ===================================================================== */
 let TREE = null;           // last API response
 const PHOTOS = new Map();  // person id -> approved photos
+const PT_ID = new Map();   // 'idA~idB' (sorted) -> approved partner relationship id
 const PC_ID = new Map();   // 'parent>child' -> approved relationship id, for correcting the kind of parent
 
 function fromPublic(p) {
@@ -105,8 +106,8 @@ function fromOwn(p) {
 function treeToGraphData(tree) {
   const people = [], rels = [];
   (tree.people || []).forEach(p => people.push(fromPublic(p)));
-  PC_ID.clear();
-  (tree.relationships || []).forEach(r => { if (r.type !== 'partner') PC_ID.set(r.a + '>' + r.b, r.id); rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype] : ['pc', r.a, r.b, r.subtype]); });
+  PC_ID.clear(); PT_ID.clear();
+  (tree.relationships || []).forEach(r => { if (r.type !== 'partner') PC_ID.set(r.a + '>' + r.b, r.id); else PT_ID.set([r.a, r.b].sort().join('~'), r.id); rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype] : ['pc', r.a, r.b, r.subtype]); });
   const own = tree.own || {};
   (own.people || []).forEach(p => people.push(fromOwn(p)));
   const ids = new Set(people.map(p => p.id));
