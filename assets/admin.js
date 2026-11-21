@@ -46,10 +46,11 @@ function personName(r) {
   const n = [r.first_name, r.middle_name, r.birth_surname].filter(Boolean).join(' ') || (r.is_placeholder === 'true' ? 'Unknown person' : '(no name)');
   return married.length ? `${n} (${married.join(', ')})` : n;
 }
-const FIELD = { first_name: 'First name', middle_name: 'Middle name', birth_surname: 'Last name at birth', married_names: 'Married names', nicknames: 'Known as',
+const FIELD = { first_name: 'First name', middle_name: 'Middle name', birth_surname: 'Last name at birth', married_names: 'Later last names', nicknames: 'Known as',
   sex: 'Sex', living: 'Living', birth_date: 'Born', birth_place: 'Birthplace', death_date: 'Died', death_place: 'Place of death', notes: 'Notes',
   is_placeholder: 'Unknown placeholder', subtype: 'Kind of link', start_date: 'Start', end_date: 'End' };
-const showVal = (field, v) => v === '' || v == null ? '(blank)' : /date/.test(field) ? fuzzy(v) : field === 'is_placeholder' ? (v === true || v === 'true' ? 'yes' : 'no') : String(v);
+const listText = v => { try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) ? a.join(', ') : String(v); } catch (e) { return String(v); } };
+const showVal = (field, v) => field === 'married_names' ? (listText(v) || '(none)') : v === '' || v == null ? '(blank)' : /date/.test(field) ? fuzzy(v) : field === 'is_placeholder' ? (v === true || v === 'true' ? 'yes' : 'no') : String(v);
 
 /* ---------- gate ---------- */
 async function unlock(key) {

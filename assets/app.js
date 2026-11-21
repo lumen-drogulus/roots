@@ -768,6 +768,8 @@ function openPerson(id) {
     if (p.bornRaw || p.bornPlace) facts.push(`<dt>Born</dt><dd>${esc([fuzzyLong(p.bornRaw), p.bornPlace].filter(Boolean).join(', '))}</dd>`);
     if (p.diedRaw || p.diedPlace) facts.push(`<dt>Died</dt><dd>${esc([fuzzyLong(p.diedRaw), p.diedPlace].filter(Boolean).join(', '))}</dd>`);
     if (p.birth) facts.push(`<dt>Born as</dt><dd>${esc(p.first + ' ' + p.birth)}</dd>`);
+    const otherNames = (p.married || []).slice(0, -1).filter(x => !sameName(x, p.last) && !sameName(x, p.birth));
+    if (otherNames.length) facts.push(`<dt>Also went by</dt><dd>${esc(otherNames.join(', '))}</dd>`);
     if (p.nicknames) facts.push(`<dt>Known as</dt><dd>${esc(p.nicknames)}</dd>`);
     if (facts.length) body += `<dl class="facts">${facts.join('')}</dl>`;
     if (p.notes) body += `<p class="story">${esc(p.notes)}</p>`;
@@ -814,11 +816,29 @@ function livingSeg(v) {
   return `<div class="field"><span class="lab">Are they living?</span><div class="seg" id="fLiving">
     <button type="button" data-v="living" aria-pressed="${v === 'living'}">Living</button><button type="button" data-v="deceased" aria-pressed="${v === 'deceased'}">Passed away</button><button type="button" data-v="unknown" aria-pressed="${v === 'unknown'}">Not sure</button></div></div>`;
 }
+/* Names are stored as birth_surname plus a list of later last names, oldest first; the last one is the name they go by now.
+   Someone who went back to their birth name has it again at the end of the list. No backend change needed. */
+const sameName = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+function namesToData(now, birth, othersText) {
+  const others = (othersText || '').split(',').map(x => x.trim()).filter(Boolean).filter(x => !sameName(x, now));
+  if (!birth) return others.length ? { birth_surname: '', married_names: [...others, now].filter(Boolean) } : { birth_surname: now, married_names: [] };
+  if (!now) return { birth_surname: birth, married_names: others };
+  if (sameName(now, birth) && !others.length) return { birth_surname: birth, married_names: [] };
+  return { birth_surname: birth, married_names: [...others, now] };
+}
+function namesFromPerson(p) {
+  const married = p.married || [];
+  return { last: p.last || '', birthName: married.length ? (p.birthSurname || '') : '', otherNames: married.slice(0, -1).join(', ') };
+}
 function fieldsHTML(p, livingV, opts = {}) {
-  const lastLabel = opts.edit ? 'Last name at birth' : 'Last name';
+  const nm = namesFromPerson(p);
+  const showMore = !!(nm.birthName || nm.otherNames);
   return `
     <div class="row2"><div class="field"><label for="fFirst">First name</label><input id="fFirst" value="${esc(p.first || '')}" autocomplete="off"><div class="dups" id="dups"></div></div>
-      <div class="field"><label for="fLast">${lastLabel}</label><input id="fLast" value="${esc(opts.edit ? (p.birthSurname || p.last || '') : (p.last || ''))}" autocomplete="off"></div></div>
+      <div class="field"><label for="fLast">Last name now</label><input id="fLast" value="${esc(nm.last)}" autocomplete="off" placeholder="Or their last one"></div></div>
+    <button type="button" class="morelink" id="fNamesBtn"${showMore ? ' hidden' : ''}>+ Maiden name or other last names</button>
+    <div class="row2" id="fNamesMore"${showMore ? '' : ' hidden'}><div class="field"><label for="fBirthName">Last name at birth</label><input id="fBirthName" value="${esc(nm.birthName)}" autocomplete="off" placeholder="If different"></div>
+      <div class="field"><label for="fOtherNames">Other last names</label><input id="fOtherNames" value="${esc(nm.otherNames)}" autocomplete="off" placeholder="Oldest first"></div></div>
     ${livingSeg(livingV)}
     <div class="row2"><div class="field"><label for="fBorn">Born</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1932, about 1932, May 14, 1932"></div>
       <div class="field"><label for="fDied">Died</label><input id="fDied" value="${esc(fuzzyToText(p.diedRaw))}" placeholder="Year or date"></div></div>
@@ -844,17 +864,34 @@ function watchForm(kind, anchor, extra = {}) {
     store.set('roots_draft', JSON.stringify({ kind, anchor, rel: segVal('fRel') || null, self: !!extra.self, fields: readForm() }));
   };
   form.addEventListener('input', keep);
-  form.addEventListener('click', e => { if (e.target.closest('.seg button')) keep(); });
+  // Tapping a button on an empty add form isn't worth a "Save what you typed?" question.
+  form.addEventListener('click', e => {
+    if (!e.target.closest('.seg button')) return;
+    const f = readForm();
+    if (kind === 'add' && ![f.first, f.last, f.birthName, f.otherNames, f.born, f.died, f.bornPlace, f.notes, f.source].some(Boolean)) return;
+    keep();
+  });
 }
 function clearDraft() { store.del('roots_draft'); }
 function fillForm(f) {
   const set = (id, v) => { const el = $('#' + id); if (el && v) el.value = v; };
-  set('fFirst', f.first); set('fLast', f.last); set('fBorn', f.born); set('fDied', f.died); set('fPlace', f.bornPlace); set('fNotes', f.notes); set('fSource', f.source);
+  set('fFirst', f.first); set('fLast', f.last); set('fBirthName', f.birthName); set('fOtherNames', f.otherNames); if (f.birthName || f.otherNames) showNames(); set('fBorn', f.born); set('fDied', f.died); set('fPlace', f.bornPlace); set('fNotes', f.notes); set('fSource', f.source);
   document.querySelectorAll('#fLiving button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === f.living));
 }
 function readForm() {
   const v = id => (($('#' + id) || {}).value || '').trim();
-  return { first: v('fFirst'), last: v('fLast'), born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
+  return { first: v('fFirst'), last: v('fLast'), birthName: v('fBirthName'), otherNames: v('fOtherNames'), born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
+}
+function showNames() { const m = $('#fNamesMore'), b = $('#fNamesBtn'); if (m) m.hidden = false; if (b) b.hidden = true; }
+/* Wires the parts every person form shares: the living buttons, a death date flipping them to Passed away, the names reveal. */
+function wireCommon() {
+  wireSeg('fLiving');
+  const died = $('#fDied');
+  if (died) died.addEventListener('input', () => {
+    if (!died.value.trim() || segVal('fLiving') === 'deceased') return;
+    document.querySelectorAll('#fLiving button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === 'deceased'));
+  });
+  const nb = $('#fNamesBtn'); if (nb) nb.onclick = () => { showNames(); $('#fBirthName').focus(); };
 }
 function formError(msg) { const e = $('#formErr'); if (!e) { toast(msg); return; } e.textContent = msg; e.hidden = !msg; if (msg) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
 function busy(on, label) {
@@ -864,7 +901,9 @@ function busy(on, label) {
 }
 function personData(f) {
   const d = { first_name: f.first || (f.last ? '' : 'Unknown'), living: f.living };
-  if (f.last) d.birth_surname = f.last;
+  const n = namesToData(f.last, f.birthName, f.otherNames);
+  if (n.birth_surname) d.birth_surname = n.birth_surname;
+  if (n.married_names.length) d.married_names = n.married_names;
   d.birth_date = toFuzzy(f.born, 'Born');
   d.death_date = toFuzzy(f.died, 'Died');
   if (f.bornPlace) d.birth_place = f.bornPlace;
@@ -910,7 +949,7 @@ function openEdit(id, restore) {
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <form class="body form" id="editForm" novalidate>${fieldsHTML(p, lv, { edit: true })}</form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
-  wireSeg('fLiving');
+  wireCommon();
   if (restore) fillForm(restore.fields);
   watchForm('edit', id);
   if (restore) formDirty = true;
@@ -920,12 +959,13 @@ function openEdit(id, restore) {
     const f = readForm();
     let changes;
     try {
-      const was = { first_name: p.placeholder ? '' : p.first, birth_surname: p.birthSurname || p.last || '', living: lv,
+      const n0 = namesFromPerson(p), was0 = namesToData(n0.last, n0.birthName, n0.otherNames), now0 = namesToData(f.last, f.birthName, f.otherNames);
+      const was = { first_name: p.placeholder ? '' : p.first, birth_surname: was0.birth_surname, married_names: JSON.stringify(was0.married_names), living: lv,
         birth_date: p.bornRaw || '', death_date: p.diedRaw || '', birth_place: p.bornPlace || '', notes: p.notes || '' };
-      const now = { first_name: f.first, birth_surname: f.last, living: f.living, birth_date: toFuzzy(f.born, 'Born'),
+      const now = { first_name: f.first, birth_surname: now0.birth_surname, married_names: JSON.stringify(now0.married_names), living: f.living, birth_date: toFuzzy(f.born, 'Born'),
         death_date: toFuzzy(f.died, 'Died'), birth_place: f.bornPlace, notes: f.notes };
       changes = Object.keys(now).filter(k => now[k] !== was[k])
-        .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: now[k], source: f.source }));
+        .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: k === 'married_names' ? JSON.parse(now[k]) : now[k], source: f.source }));
       if (p.placeholder && (f.first || f.last)) changes.push({ kind: 'suggestion', target_id: id, field: 'is_placeholder', value: false, source: f.source });
     } catch (err) { formError(err.message); return; }
     if (!changes.length) { formError("Nothing has changed yet."); return; }
@@ -955,7 +995,7 @@ function openAdd(id, opts = {}) {
     <form class="body form" id="addForm" novalidate>
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
         ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}"${v === 'parent' && parents.length >= 2 ? ' disabled title="Already has two parents"' : ''}>${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
-      <div class="field" id="fOtherWrap" hidden><label for="fOther">Other parent</label><select id="fOther"></select></div>
+      <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
       <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Former partners</button></div></div>` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
       <input type="hidden" id="fLink" value="">
@@ -964,15 +1004,24 @@ function openAdd(id, opts = {}) {
   const syncRel = v => {
     if (!p) return;
     const ow = $('#fOtherWrap'), kw = $('#fKindWrap');
-    ow.hidden = v !== 'child'; kw.hidden = v !== 'partner';
+    ow.hidden = true; kw.hidden = v !== 'partner';
+    const opts = (list, none) => list.map(x => `<option value="${x}">${esc(displayName(P(x)))}</option>`).join('') + `<option value="">${none}</option>`;
+    $('#fOther').onchange = null;
     if (v === 'child') {
-      const prts = partnersOf(p.id);
-      $('#fOther').innerHTML = prts.map(x => `<option value="${x.id}">${esc(displayName(P(x.id)))}</option>`).join('') + '<option value="">Someone else, or not sure</option>';
-      if (!prts.length) ow.hidden = true;
+      // Who else is this child's parent? Defaults to the current partner.
+      const prts = partnersOf(p.id).map(x => x.id);
+      if (prts.length) { $('#fOtherLab').textContent = 'Their other parent'; $('#fOther').innerHTML = opts(prts, 'Someone else, or not sure'); ow.hidden = false; }
+    } else if (v === 'parent' && parents.length) {
+      // A second parent: were they a couple with the parent already here?
+      $('#fOtherLab').textContent = 'Together with';
+      $('#fOther').innerHTML = opts(parents, 'Neither, or not sure');
+      if (parents.length > 1) $('#fOther').value = '';
+      ow.hidden = false; kw.hidden = !$('#fOther').value;
+      $('#fOther').onchange = () => { kw.hidden = !$('#fOther').value; };
     }
   };
   if (p) { wireSeg('fRel', syncRel); wireSeg('fKind'); syncRel(rel); }
-  wireSeg('fLiving');
+  wireCommon();
   if (opts.fields) fillForm(opts.fields);
   watchForm('add', id, { self });
   if (opts.fields) formDirty = true;
@@ -1000,7 +1049,11 @@ function openAdd(id, opts = {}) {
         items.push({ kind: 'relationship', type: 'parent_child', a: p.id, b: me, source: f.source });
         const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
         if (other) items.push({ kind: 'relationship', type: 'parent_child', a: other, b: me, source: f.source });
-      } else if (r === 'parent') items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, source: f.source });
+      } else if (r === 'parent') {
+        items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, source: f.source });
+        const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
+        if (other && other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+      }
       else if (r === 'partner') items.push({ kind: 'relationship', type: 'partner', a: p.id, b: me, subtype: segVal('fKind') || 'married', source: f.source });
       else if (r === 'sibling') {
         if (parents.length) parents.forEach(pp => items.push({ kind: 'relationship', type: 'parent_child', a: pp, b: me, source: f.source }));
