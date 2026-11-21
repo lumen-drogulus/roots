@@ -86,6 +86,29 @@ engine = rep(engine, "  /* ---- married-in families (partners of the centered pe
   }
 
   /* ---- married-in families (partners of the centered person and of their children) ---- */""")
+# Aunts and uncles: an ancestor's sibling folds their own partner and children (the centered person's cousins)
+# into a "Barbara's family" bud, tucked toward the children's row, the same way the centered person's siblings do.
+engine = rep(engine, "  /* ---- married-in families (partners of the centered person and of their children) ---- */",
+  """  /* ---- aunts and uncles: their partners and children (cousins), folded into a family bud ---- */
+  for (const n of [...nodes.values()].filter(n => n.kind === 'person' && n.extraOf && !n.partnerOf && n.g > 0)) {
+    const s = n.id, host = nodes.get(n.extraOf);
+    const dir = host && n.x < host.x ? -1 : 1, down = STATE.rootsBelow ? -1 : 1;
+    const pts = partnersOf(s).map(x => x.id).filter(x => !nodes.has(x));
+    const ks = childrenOf(s).filter(x => !nodes.has(x));
+    if (!pts.length && !ks.length) continue;
+    const key = 'fam:' + s;
+    if (!isOpen(key)) {
+      placeBlock([{ id: 'bud:' + key, key, x: n.x, y: n.y + down * (CH / 2 + 26), g: n.g - 0.5, kind: 'bud', label: (P(s).first || 'Their') + "'s family", count: pts.length + ks.length, anchor: s }], dir);
+      continue;
+    }
+    // Partners first, beside the aunt or uncle; then the cousins under the couple, each block clearing what's already there.
+    let ox = n.x, mid = n.x;
+    pts.forEach((pt, i) => { ox += dir * (CW + CG); const b = [{ id: pt, x: ox, y: n.y, g: n.g, kind: 'person', partnerOf: s }]; placeBlock(b, dir); ox = b[0].x; if (!i) mid = (n.x + ox) / 2; });
+    let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
+    if (ks.length) placeBlock(ks.map(k => { const c = { id: k, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return c; }), dir);
+  }
+
+  /* ---- married-in families (partners of the centered person and of their children) ---- */""")
 # Former partners (never married, not together now) draw and read like divorced ones.
 engine = rep(engine, "return sub === 'divorced' ? 'Former partner'", "return isFormer(sub) ? 'Former partner'")
 engine = rep(engine, "prts.filter(pt => pt.sub !== 'divorced'), former = prts.filter(pt => pt.sub === 'divorced');", "prts.filter(pt => !isFormer(pt.sub)), former = prts.filter(pt => isFormer(pt.sub));")
