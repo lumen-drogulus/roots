@@ -304,11 +304,21 @@ async def main():
         hank = next(r[0] for r in st13['People'][1:] if r[2] == 'Hank')
         check('one-parent half-sibling gets an unknown other parent', sum(1 for r in st13['Relationships'][1:] if r[2] == 'parent_child' and r[4] == hank) == 2)
 
+        # ---------- former partners, never married ----------
+        await tp.locator('.card.focus').click(); await tp.wait_for_timeout(300); await tp.click('#pAdd'); await tp.wait_for_timeout(300)
+        await tp.locator('#fRel button[data-v="partner"]').click(); await tp.locator('#fKind button[data-v="former"]').click()
+        await tp.fill('#fFirst', 'Erin'); await tp.locator('#fLiving button[data-v="living"]').click()
+        await tp.click('#pSave'); await tp.wait_for_timeout(1500); await tp.click('#thanksBack'); await tp.wait_for_timeout(2000)
+        st14 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        eid = next(r[0] for r in st14['People'][1:] if r[2] == 'Erin')
+        check('former partner stored as former', any(r[2] == 'partner' and eid in (r[3], r[4]) and r[5] == 'former' for r in st14['Relationships'][1:]))
+        check('former partner labeled and placed with exes', 'Former partner' in await tp.inner_text('.card:has-text("Erin")'))
+
         # ---------- pause ----------
         await op.click('#btnPause'); await op.wait_for_timeout(700)
         await rp.reload(); await wait_api(rp)
         check('relatives see the pause notice', await rp.is_visible('#paused'))
-        await rp.locator('.card', has_text='Kate').first.click(); await rp.wait_for_timeout(300); await rp.click('#pAdd'); await rp.wait_for_timeout(300)
+        await rp.locator('.card.focus').click(); await rp.wait_for_timeout(300); await rp.click('#pAdd'); await rp.wait_for_timeout(300)
         await rp.fill('#fFirst', 'Paused'); await rp.click('#pSave'); await rp.wait_for_timeout(1000)
         check('adding while paused gets a clear message', 'paused' in (await rp.inner_text('#formErr')).lower())
         await op.click('#btnPause'); await op.wait_for_timeout(500)

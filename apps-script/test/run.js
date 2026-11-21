@@ -73,6 +73,15 @@ test('middle name and goes-by are public, even for living people', () => {
   assert.strictEqual(mom.birth_surname, undefined);
 });
 
+test('former partners (never married) are accepted', () => {
+  const { t, ids } = setup();
+  const r = t.post({ action: 'submit', key: t.props.ADMIN_KEY, token: TOK_JONNY, items: [
+    { kind: 'person', ref: 'new:x', data: { first_name: 'Ex', living: 'living' } },
+    { kind: 'relationship', type: 'partner', a: ids['new:mom'], b: 'new:x', subtype: 'former' }] });
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.ok(t.get({}).relationships.some(x => x.type === 'partner' && x.subtype === 'former'));
+});
+
 test('deceased people show everything', () => {
   const { t, ids } = setup();
   const gpa = t.get({}).people.find(p => p.id === ids['new:gpa']);

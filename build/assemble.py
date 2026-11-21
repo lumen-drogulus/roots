@@ -86,6 +86,14 @@ engine = rep(engine, "  /* ---- married-in families (partners of the centered pe
   }
 
   /* ---- married-in families (partners of the centered person and of their children) ---- */""")
+# Former partners (never married, not together now) draw and read like divorced ones.
+engine = rep(engine, "return sub === 'divorced' ? 'Former partner'", "return isFormer(sub) ? 'Former partner'")
+engine = rep(engine, "prts.filter(pt => pt.sub !== 'divorced'), former = prts.filter(pt => pt.sub === 'divorced');", "prts.filter(pt => !isFormer(pt.sub)), former = prts.filter(pt => isFormer(pt.sub));")
+engine = rep(engine, "(partnersOf(u.id).find(x => x.id === pid) || {}).sub === 'divorced');", "isFormer((partnersOf(u.id).find(x => x.id === pid) || {}).sub));")
+engine = rep(engine, "cls += ' partner' + (e.sub === 'divorced' ? ' former' : '');", "cls += ' partner' + (isFormer(e.sub) ? ' former' : '');")
+engine = rep(engine, "r.dash = e.sub === 'divorced' ? '0.05 0.05' : null;", "r.dash = isFormer(e.sub) ? '0.05 0.05' : null;")
+engine = rep(engine, "r.deco.style.opacity = sub === 'divorced' ? .4 : 1;", "r.deco.style.opacity = isFormer(sub) ? .4 : 1;")
+engine = rep(engine, "const parentsOf = id => G.parents.get(id) || [];", "const parentsOf = id => G.parents.get(id) || [];\nconst isFormer = s => s === 'divorced' || s === 'former';")
 ui = open('build/app-ui.js').read()
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
 app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-boot.js').read()

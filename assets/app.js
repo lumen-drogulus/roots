@@ -137,6 +137,7 @@ function buildGraph(data) {
 }
 const P = id => G.people.get(id);
 const parentsOf = id => G.parents.get(id) || [];
+const isFormer = s => s === 'divorced' || s === 'former';
 const pcKind = (a, b) => { const s = G.pcSub.get(a + '>' + b); return s === 'step' || s === 'adopted' || s === 'foster' ? s : ''; };
 const childrenOf = id => G.children.get(id) || [];
 const partnersOf = id => G.partners.get(id) || [];
@@ -187,7 +188,7 @@ function relation(id) {
   }
   if (/^U+$/.test(path)) { const n = path.length; return n === 1 ? w('Father', 'Mother', 'Parent') : greatX(n - 2, w('grandfather', 'grandmother', 'grandparent')); }
   if (/^D+$/.test(path)) { const n = path.length; return n === 1 ? w('Son', 'Daughter', 'Child') : greatX(n - 2, w('grandson', 'granddaughter', 'grandchild')); }
-  if (path === 'P') { const sub = (partnersOf(v).find(x => x.id === id) || {}).sub; return sub === 'divorced' ? 'Former partner' : w('Husband', 'Wife', 'Partner'); }
+  if (path === 'P') { const sub = (partnersOf(v).find(x => x.id === id) || {}).sub; return isFormer(sub) ? 'Former partner' : w('Husband', 'Wife', 'Partner'); }
   if (path === 'UD') { const s = siblingsOf(v).find(x => x.id === id); return (s && s.half ? 'Half-' : '') + (s && s.half ? w('brother', 'sister', 'sibling') : w('Brother', 'Sister', 'Sibling')); }
   if (path === 'UUD') return w('Uncle', 'Aunt', "Parent's sibling");
   if (/^UUU+D$/.test(path)) { const n = path.length - 3; return isLiving(p) || !p.sex ? greatX(n - 1, "grandparent's sibling") : greatX(n, w('uncle', 'aunt', '')); }
@@ -317,7 +318,7 @@ function layout() {
 
   /* ---- the centered person's row: former partners left, current partners right ---- */
   const prts = partnersOf(F).filter(pt => !nodes.has(pt.id));
-  const current = prts.filter(pt => pt.sub !== 'divorced'), former = prts.filter(pt => pt.sub === 'divorced');
+  const current = prts.filter(pt => !isFormer(pt.sub)), former = prts.filter(pt => isFormer(pt.sub));
   let rx = FW / 2 + CG, lx = -(FW / 2 + CG);
   const sideOf = {};
   current.forEach(pt => { addNode(pt.id, rx + CW / 2, 0, { partnerOf: F }); occupy(0, rx, rx + CW); sideOf[pt.id] = 1; rx += CW + CG; });
@@ -340,7 +341,7 @@ function layout() {
     const selfW = CW + u.prt.length * (CW + CG);
     let px = x - selfW / 2 + CW / 2;
     block.push({ id: u.id, x: px, y: genY(g), g, kind: 'person' });
-    const formerP = u.prt.filter(pid => (partnersOf(u.id).find(x => x.id === pid) || {}).sub === 'divorced');
+    const formerP = u.prt.filter(pid => isFormer((partnersOf(u.id).find(x => x.id === pid) || {}).sub));
     const currentP = u.prt.filter(pid => !formerP.includes(pid));
     px += formerP.length * (CW + CG);
     block[block.length - 1].x = px;
@@ -662,8 +663,8 @@ function drawEdge(r) {
     const L = pos(l), R = pos(rr);
     const x1 = L.x + halfW(l), x2 = R.x - halfW(rr), y = (L.y + R.y) / 2;
     d = `M${x1} ${y} L${x2} ${y}`;
-    cls += ' partner' + (e.sub === 'divorced' ? ' former' : '');
-    r.dash = e.sub === 'divorced' ? '0.05 0.05' : null;
+    cls += ' partner' + (isFormer(e.sub) ? ' former' : '');
+    r.dash = isFormer(e.sub) ? '0.05 0.05' : null;
     drawRingMark(r, (x1 + x2) / 2, y, e.sub);
   } else if (e.kind === 'stem') {
     const a = pos(e.a), b = pos(e.b);
@@ -690,7 +691,7 @@ function drawRingMark(r, x, y, sub) {
     r.el.remove = () => { orig(); r.deco.remove(); };
   }
   r.deco.setAttribute('transform', `translate(${x} ${y}) scale(${r.grow})`);
-  r.deco.style.opacity = sub === 'divorced' ? .4 : 1;
+  r.deco.style.opacity = isFormer(sub) ? .4 : 1;
 }
 function drawRings(focusT) {
   ringsG.innerHTML = '';
@@ -801,7 +802,7 @@ function lastNameHistory(p) {
     const sp = spouseFor(nm);
     if (!sp) { parts.push(esc(nm)); return; }
     used.add(sp.id);
-    const how = sp.sub === 'divorced' ? ', divorced' : sp.sub === 'widowed' ? ', widowed' : '';
+    const how = sp.sub === 'divorced' ? ', divorced' : sp.sub === 'former' ? ', separated' : sp.sub === 'widowed' ? ', widowed' : '';
     parts.push(`${esc(nm)} <span class="muted">from marriage to <a href="#" data-goto="${esc(sp.id)}">${esc(displayName(P(sp.id)))}</a>${how}</span>`);
   });
   return parts.join('<br>');
@@ -892,7 +893,7 @@ function namesFromPerson(p) {
 const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
 /* In the edit form: one row per confirmed parent link, so a parent can be marked step, adoptive or foster later.
    For living people the server shows adoptive and foster links as plain "parent"; that shows here as "Not shown". */
-const PT_KINDS = [['married', 'Married'], ['partner', 'Partners'], ['divorced', 'Divorced'], ['widowed', 'Widowed']];
+const PT_KINDS = [['married', 'Married'], ['partner', 'Partners'], ['divorced', 'Divorced'], ['former', 'Former partners'], ['widowed', 'Widowed']];
 /* In the edit form: each confirmed partnership with whether it's still going. */
 function partnerKindsHTML(id) {
   const rows = partnersOf(id).filter(x => PT_ID.has([id, x.id].sort().join('~')) && !P(x.id).placeholder).map(x => {
@@ -1112,7 +1113,7 @@ function openAdd(id, opts = {}) {
       <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
         <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
-      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
+      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="former" aria-pressed="false">Former partners</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
 ` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
       <input type="hidden" id="fLink" value="">

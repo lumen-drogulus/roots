@@ -44,7 +44,7 @@ var KIND_TABLE = { person: 'People', relationship: 'Relationships', suggestion: 
 var SEX_VALUES = ['', 'female', 'male', 'other'];
 var LIVING_VALUES = ['living', 'deceased', 'unknown'];
 var PC_SUBTYPES = ['biological', 'adopted', 'step', 'foster', 'unknown'];
-var PARTNER_SUBTYPES = ['married', 'partner', 'divorced', 'widowed', 'unknown'];
+var PARTNER_SUBTYPES = ['married', 'partner', 'divorced', 'former', 'widowed', 'unknown'];  // former: together once, never married, not now
 
 // Fields a contributor may set on a person, and how each is validated.
 var PERSON_FIELDS = {
