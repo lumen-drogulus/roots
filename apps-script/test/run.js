@@ -446,6 +446,71 @@ test('daily backup: one copy a day of every tab, in a backups folder, newest 30 
   assert.deepStrictEqual(t.env._errors, []);
 });
 
+test('own unconfirmed entries: edit in place, take back with links, strays go too', () => {
+  const { t, key, ids } = setup();
+  // Linda adds a parent for Carol (with a wrong nickname) and a half-sibling held by an Unknown parent.
+  const r = t.post({ action: 'submit', token: TOK_LINDA, items: [
+    { kind: 'person', ref: 'new:a', data: { first_name: 'Amanda', birth_surname: 'Ross', nicknames: 'Mom', living: 'living' } },
+    { kind: 'relationship', type: 'parent_child', a: 'new:a', b: ids['new:kid'] },
+    { kind: 'person', ref: 'new:h', data: { first_name: 'Hal', living: 'living' } },
+    { kind: 'person', ref: 'new:u', data: { is_placeholder: true } },
+    { kind: 'relationship', type: 'parent_child', a: ids['new:me'], b: 'new:h' },
+    { kind: 'relationship', type: 'parent_child', a: 'new:u', b: 'new:h' }
+  ] });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  const A = r.ids['new:a'], H = r.ids['new:h'], U = r.ids['new:u'];
+  // Fix the nickname: a full rewrite of the form's fields.
+  const e = t.post({ action: 'own_edit', token: TOK_LINDA, id: A, data: { first_name: 'Amanda', middle_name: 'Renee', birth_surname: 'Ross', living: 'living' }, source: 'I know her' });
+  assert.strictEqual(e.ok, true, JSON.stringify(e));
+  const row = t.sheets.People._data.find(x => x[0] === A);
+  const P = t.sheets.People._data[0];
+  assert.strictEqual(row[P.indexOf('nicknames')], '', 'cleared field clears');
+  assert.strictEqual(row[P.indexOf('middle_name')], 'Renee');
+  assert.strictEqual(row[P.indexOf('status')], 'pending', 'still waits for Jonny');
+  assert.strictEqual(row[P.indexOf('source')], 'I know her');
+  // A nameless edit is refused; someone else's entry is refused; an approved one is refused.
+  assert.strictEqual(t.post({ action: 'own_edit', token: TOK_LINDA, id: A, data: { living: 'living' } }).ok, false);
+  assert.ok(/isn't one of yours|Nothing from this device/.test(t.post({ action: 'own_edit', token: TOK_STRANGER, id: A, data: { first_name: 'X' } }).error || ''));
+  assert.ok(/isn't one of yours/.test(t.post({ action: 'withdraw', token: TOK_LINDA, ids: [ids['new:me']] }).error || ''));
+  // Take back Hal: his two links go, and the Unknown parent that only held him goes too.
+  const w = t.post({ action: 'withdraw', token: TOK_LINDA, ids: [H] });
+  assert.strictEqual(w.ok, true, JSON.stringify(w));
+  assert.ok(w.withdrawn.includes(H) && w.withdrawn.includes(U) && w.withdrawn.length === 4, JSON.stringify(w.withdrawn));
+  const own = t.get({ action: 'tree', token: TOK_LINDA }).own;
+  assert.deepStrictEqual(own.people.map(p => p.id), [A], 'only Amanda left in her view');
+  assert.strictEqual(own.relationships.length, 1);
+  const q = t.post({ action: 'admin_queue', key });
+  assert.ok(!JSON.stringify(q).includes(H), 'gone from the approval queue');
+  assert.ok(/already taken back/.test(t.post({ action: 'withdraw', token: TOK_LINDA, ids: [H] }).error || ''));
+  // Taking back Amanda's only link takes Amanda too: nothing would connect her.
+  const w2 = t.post({ action: 'withdraw', token: TOK_LINDA, ids: [own.relationships[0].id] });
+  assert.ok(w2.withdrawn.includes(A), JSON.stringify(w2));
+  assert.strictEqual(t.get({ action: 'tree', token: TOK_LINDA }).own.people.length, 0);
+  // Reviewed entries can't be taken back.
+  const r2 = t.post({ action: 'submit', token: TOK_LINDA, items: [{ kind: 'person', ref: 'new:z', data: { first_name: 'Zed' } }, { kind: 'relationship', type: 'parent_child', a: ids['new:me'], b: 'new:z' }] });
+  t.post({ action: 'admin_approve', key, items: [{ kind: 'person', id: r2.ids['new:z'] }] });
+  assert.ok(/already reviewed/.test(t.post({ action: 'withdraw', token: TOK_LINDA, ids: [r2.ids['new:z']] }).error || ''));
+  assert.deepStrictEqual(t.env._errors, []);
+});
+
+test('re-editing someone replaces your own earlier unconfirmed changes in one call', () => {
+  const { t, ids } = setup();
+  const s1 = t.post({ action: 'submit', token: TOK_LINDA, items: [{ kind: 'suggestion', target_id: ids['new:gpa'], field: 'first_name', value: 'Joseph' }] });
+  assert.strictEqual(s1.ok, true);
+  const mine = () => t.get({ action: 'tree', token: TOK_LINDA }).own.suggestions;
+  const old = mine()[0].id;
+  const s2 = t.post({ action: 'submit', token: TOK_LINDA, withdraw: [old], items: [{ kind: 'suggestion', target_id: ids['new:gpa'], field: 'first_name', value: 'Josef' }] });
+  assert.strictEqual(s2.ok, true, JSON.stringify(s2));
+  assert.deepStrictEqual(mine().map(s => s.value), ['Josef']);
+  // A withdraw list with someone else's entry stops the whole call before anything is written.
+  const bad = t.post({ action: 'submit', token: TOK_STRANGER, withdraw: [mine()[0].id], items: [{ kind: 'suggestion', target_id: ids['new:gpa'], field: 'notes', value: 'x' }] });
+  assert.strictEqual(bad.ok, false);
+  assert.strictEqual(t.sheets.Suggestions._data.filter(r => r.includes('x') && r.includes('notes')).length, 0);
+  // Take back alone.
+  assert.strictEqual(t.post({ action: 'withdraw', token: TOK_LINDA, ids: [mine()[0].id] }).ok, true);
+  assert.strictEqual(mine().length, 0);
+});
+
 test('no unexpected server errors were logged', () => {
   // each test builds a fresh env; this one just checks a full happy path is clean
   const { t } = setup();

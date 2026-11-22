@@ -103,17 +103,68 @@ function fromOwn(p) {
     living, livingRaw: raw, sex: p.sex || '', placeholder: !!p.is_placeholder, pending: true, addedBy: 'you'
   };
 }
+/* This relative's own unconfirmed work, so the page can show it and offer Edit and Take back.
+   OWN_RELS: links they added. OWN_SUGG: their changes to confirmed people and links, by target id.
+   LINK_BASE: each confirmed link's kind before their changes, so a re-edit compares against what Jonny confirmed. */
+let OWN_RELS = [];
+const OWN_SUGG = new Map();
+const LINK_BASE = new Map();
+const REL_BY_ID = new Map();
+
+/* One of their unconfirmed changes, laid over a confirmed person so they see what they sent (Freddy, not Unknown). */
+function applyOwnChange(p, field, v) {
+  const s = v === undefined || v === null ? '' : v;
+  if (field === 'first_name') p.first = s;
+  else if (field === 'middle_name') p.middle = s;
+  else if (field === 'nicknames') p.nicknames = s;
+  else if (field === 'birth_surname' || field === 'married_names') {
+    if (field === 'birth_surname') p.birthSurname = s; else p.married = Array.isArray(s) ? s : [];
+    p.last = p.married.length ? p.married[p.married.length - 1] : p.birthSurname;
+    p.birth = p.married.length ? p.birthSurname : '';
+  }
+  else if (field === 'living') p.livingRaw = s || 'unknown';
+  else if (field === 'birth_date') { p.bornRaw = s; p.born = fuzzyShort(s); }
+  else if (field === 'death_date') { p.diedRaw = s; p.died = fuzzyShort(s); }
+  else if (field === 'birth_place') p.bornPlace = s;
+  else if (field === 'death_place') p.diedPlace = s;
+  else if (field === 'notes') p.notes = s;
+  else if (field === 'sex') p.sex = s;
+  else if (field === 'is_placeholder') p.placeholder = s === true || s === 'true';
+}
+
 function treeToGraphData(tree) {
   const people = [], rels = [];
   (tree.people || []).forEach(p => people.push(fromPublic(p)));
-  PC_ID.clear(); PT_ID.clear();
-  (tree.relationships || []).forEach(r => { if (r.type !== 'partner') PC_ID.set(r.a + '>' + r.b, r.id); else PT_ID.set([r.a, r.b].sort().join('~'), r.id); rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype] : ['pc', r.a, r.b, r.subtype]); });
+  PC_ID.clear(); PT_ID.clear(); LINK_BASE.clear(); REL_BY_ID.clear(); OWN_SUGG.clear();
+  (tree.relationships || []).forEach(r => {
+    const key = r.type !== 'partner' ? r.a + '>' + r.b : [r.a, r.b].sort().join('~');
+    if (r.type !== 'partner') PC_ID.set(key, r.id); else PT_ID.set(key, r.id);
+    LINK_BASE.set(key, r.subtype);
+    const row = r.type === 'partner' ? ['partner', r.a, r.b, r.subtype] : ['pc', r.a, r.b, r.subtype];
+    REL_BY_ID.set(r.id, { r, row }); rels.push(row);
+  });
   const own = tree.own || {};
   (own.people || []).forEach(p => people.push(fromOwn(p)));
   const ids = new Set(people.map(p => p.id));
-  (own.relationships || []).forEach(r => {
-    if (!ids.has(r.a) || !ids.has(r.b)) return;
-    rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype || 'unknown'] : ['pc', r.a, r.b, r.subtype || 'biological', true]);
+  OWN_RELS = (own.relationships || []).filter(r => ids.has(r.a) && ids.has(r.b));
+  OWN_RELS.forEach(r => rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype || 'unknown'] : ['pc', r.a, r.b, r.subtype || 'biological', true]));
+  // Their changes to confirmed people and links show on their own screen right away, marked "Your edit".
+  const byId = new Map(people.map(p => [p.id, p]));
+  (own.suggestions || []).forEach(s => {
+    const p = byId.get(s.target_id), link = REL_BY_ID.get(s.target_id);
+    if (!p && !link) return;
+    if (!OWN_SUGG.has(s.target_id)) OWN_SUGG.set(s.target_id, []);
+    OWN_SUGG.get(s.target_id).push(s);
+    if (link) { if (s.field === 'subtype' && s.value) link.row[3] = s.value; return; }
+    if (p.pending) return;
+    if (!p.base) p.base = { ...p, married: [...(p.married || [])] };
+    applyOwnChange(p, s.field, s.value);
+    p.edits = OWN_SUGG.get(s.target_id);
+  });
+  people.forEach(p => {
+    if (!p.edits) return;
+    const raw = p.livingRaw || (p.base.placeholder ? 'unknown' : p.base.living ? 'living' : 'deceased'), born = parseFuzzy(p.bornRaw);
+    p.living = !p.placeholder && (raw === 'living' || (raw !== 'deceased' && !p.diedRaw && !(born && born.q !== 'after' && born.y <= new Date().getFullYear() - 110)));
   });
   PHOTOS.clear();
   (tree.photos || []).forEach(f => (f.tags || []).forEach(pid => { if (!PHOTOS.has(pid)) PHOTOS.set(pid, []); PHOTOS.get(pid).push(f); }));

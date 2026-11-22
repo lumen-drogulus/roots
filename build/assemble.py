@@ -68,6 +68,9 @@ keyjs = rep(keyjs, "      ${row(keyLine('M46 31 C46 18 46 16 46 3', { dash: '2 4
 engine = rep(engine, "function displayName(p) {",
   "function cardName(p) {\n  if (p.placeholder) return 'Unknown';\n  const nickOf = x => { const n = (x.nicknames || '').split(',')[0].trim(); return n && !sameNameE(n, x.first) ? n : ''; };\n  const short = x => [x.first, nickOf(x) ? `\"${nickOf(x)}\"` : x.middle ? x.middle.trim()[0] + '.' : '', x.last].filter(Boolean).join(' ');\n  const base = short(p);\n  // Two people who would read the same (a father and son both going by Jonny) also get their middle initial.\n  const clash = nickOf(p) && p.middle && [...G.people.values()].some(x => x.id !== p.id && !x.placeholder && short(x) === base);\n  return clash ? [p.first, `\"${nickOf(p)}\"`, p.middle.trim()[0] + '.', p.last].join(' ') : base;\n}\nconst sameNameE = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();\nfunction displayName(p) {")
 engine = rep(engine, "<span class=\"nm\">${p.placeholder ? 'Unknown' : esc(displayName(p))}</span>", "<span class=\"nm\">${esc(cardName(p))}</span>")
+# A relative's own unconfirmed changes to a confirmed person: same dashed card, tagged "Your edit".
+engine = rep(engine, "+ (p.pending ? '<span class=\"tag\">Unconfirmed</span>' : '')", "+ (p.pending ? '<span class=\"tag\">Unconfirmed</span>' : p.edits ? '<span class=\"tag\">Your edit</span>' : '')")
+engine = rep(engine, "(p.pending ? ' pending' : '')", "(p.pending || p.edits ? ' pending' : '')")
 # A parent's other partner is a step-parent to the centered person: show them, don't fold them into a bud.
 engine = rep(engine, "if (others.length) { if (isOpen('op:' + id)) t.extras.push(", "if (others.length) { if (depth === 1 || isOpen('op:' + id)) t.extras.push(")
 # Step-siblings: a step-parent's other children. Labeled, and placed beside that step-parent's side of the tree.

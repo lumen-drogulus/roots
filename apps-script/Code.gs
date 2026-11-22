@@ -87,6 +87,8 @@ function doPost(e) {
       switch (action) {
         case 'submit': result = submit_(db, body, isAdmin); break;
         case 'upload_photo': result = uploadPhoto_(db, body, isAdmin); break;
+        case 'withdraw': result = withdraw_(db, body); break;
+        case 'own_edit': result = ownEdit_(db, body); break;
         case 'admin_tree': result = adminTree_(db); break;
         case 'admin_queue': result = adminQueue_(db); break;
         case 'admin_approve': result = adminDecide_(db, body.items || [], 'approved'); break;
@@ -582,6 +584,9 @@ function submit_(db, body, isAdmin) {
 
   // Validate everything before writing anything, so a bad item can't leave half a submission behind.
   var plan = items.map(function (item, i) { return validateItem_(ctx, item, i); });
+  // A relative re-editing someone replaces their own earlier unconfirmed changes in the same call.
+  var takeBack = Array.isArray(body.withdraw) && body.withdraw.length ? planWithdraw_(db, me, body.withdraw, ctx.now) : null;
+  if (takeBack) takeBack();
 
   var created = {};
   var skipped = [];
@@ -593,6 +598,106 @@ function submit_(db, body, isAdmin) {
 
   if (!isAdmin) props.setProperty('NOTIFY_PENDING', '1');
   return { batch_id: ctx.batch, ids: created, skipped: skipped, status: status };
+}
+
+/* =========================================================================
+ * A relative's own unconfirmed entries: fix them, or take them back.
+ * Only their own, only while pending. Taken-back rows stay in the Sheet as "withdrawn", so history is kept.
+ * ========================================================================= */
+var OWN_TABLES = ['People', 'Relationships', 'Suggestions', 'Photos', 'PhotoTags'];
+
+function ownPending_(db, me, id) {
+  for (var i = 0; i < OWN_TABLES.length; i++) {
+    var row = db[OWN_TABLES[i]].get(id);
+    if (!row) continue;
+    if (row.submitted_by !== me.id) break;
+    if (row.status === 'withdrawn') throw userError_('That was already taken back.');
+    if (row.status !== 'pending') throw userError_('That one was already reviewed, so it can\'t be taken back. Use Edit to suggest a fix.');
+    return { table: OWN_TABLES[i], row: row };
+  }
+  throw userError_('That entry isn\'t one of yours.');
+}
+
+/** Checks every id now, returns a function that takes them back. People take their own pending links, tags and
+ *  suggestions with them, and an unconfirmed person of theirs left with no links at all goes too (an Unknown parent
+ *  that only held a sibling, or someone whose one link was just taken back): nobody could reach them on the tree. */
+function planWithdraw_(db, me, ids, now) {
+  if (!Array.isArray(ids) || !ids.length) throw userError_('Nothing to take back.');
+  if (ids.length > CONFIG.MAX_ITEMS_PER_SUBMIT) throw userError_('Too much at once.');
+  var hits = ids.map(function (id) { return ownPending_(db, me, String(id || '')); });
+  return function () {
+    var done = [];
+    var mineLive = function (r) { return r.status === 'pending' && r.submitted_by === me.id; };
+    var off = function (table, row) {
+      if (!mineLive(row)) return;
+      db[table].set(row, 'status', 'withdrawn');
+      db[table].set(row, 'reviewed_at', now);
+      done.push(row.id);
+    };
+    var gone = {}, photos = {}, touched = {};
+    var linkOff = function (r) { off('Relationships', r); touched[r.person_a] = 1; touched[r.person_b] = 1; };
+    hits.forEach(function (h) {
+      if (h.table === 'Relationships') linkOff(h.row); else off(h.table, h.row);
+      if (h.table === 'People') gone[h.row.id] = 1;
+      if (h.table === 'Photos') photos[h.row.id] = 1;
+    });
+    var cascade = function () {
+      db.Relationships.rows.forEach(function (r) { if (mineLive(r) && (gone[r.person_a] || gone[r.person_b])) linkOff(r); });
+      db.PhotoTags.rows.forEach(function (t) { if (mineLive(t) && (gone[t.person_id] || photos[t.photo_id])) off('PhotoTags', t); });
+      db.Suggestions.rows.forEach(function (s) { if (mineLive(s) && gone[s.target_id]) off('Suggestions', s); });
+    };
+    cascade();
+    var linked = function (id) {
+      return db.Relationships.rows.some(function (r) {
+        return (r.person_a === id || r.person_b === id) && (r.status === 'approved' || r.status === 'pending');
+      });
+    };
+    for (var more = true, guard = 0; more && guard++ < 50;) {
+      more = false;
+      Object.keys(touched).forEach(function (id) {
+        var p = db.People.get(id);
+        if (p && mineLive(p) && !gone[id] && !linked(id)) { off('People', p); gone[id] = 1; more = true; }
+      });
+      if (more) cascade();
+    }
+    return done;
+  };
+}
+
+/** body: { token, ids: [...] } */
+function withdraw_(db, body) {
+  var me = findContributorByToken_(db, body.token);
+  if (!me) throw userError_('Nothing from this device to take back.');
+  return { withdrawn: planWithdraw_(db, me, body.ids, nowIso_())() };
+}
+
+/** body: { token, id, data, source? }. Rewrites one of their own unconfirmed people (every form field, so a cleared
+ *  field clears), or the kind of one of their own unconfirmed links. Suggestions are replaced via submit's withdraw. */
+function ownEdit_(db, body) {
+  var me = findContributorByToken_(db, body.token);
+  if (!me) throw userError_('Nothing from this device to change.');
+  var hit = ownPending_(db, me, String(body.id || ''));
+  var row = hit.row, input = body.data || {};
+  if (hit.table === 'People') {
+    var data = cleanFields_(input, PERSON_FIELDS, '');
+    var married = data.married_names && data.married_names !== '[]';
+    var placeholder = 'is_placeholder' in data ? data.is_placeholder === 'true' : isTrue_(row.is_placeholder);
+    if (!placeholder && !data.first_name && !data.birth_surname && !data.nicknames && !married) throw userError_('A name is needed. "Unknown" is fine.');
+    ['first_name', 'middle_name', 'birth_surname', 'married_names', 'nicknames', 'birth_date', 'birth_place', 'death_date', 'notes'].forEach(function (f) {
+      db.People.set(row, f, f === 'married_names' ? (married ? data.married_names : '') : (data[f] || ''));
+    });
+    db.People.set(row, 'living', data.living || 'unknown');
+    ['sex', 'death_place', 'is_placeholder'].forEach(function (f) { if (f in data) db.People.set(row, f, data[f]); });
+  } else if (hit.table === 'Relationships') {
+    var sub = cleanText_(input.subtype, 20).toLowerCase();
+    if ((row.type === 'partner' ? PARTNER_SUBTYPES : PC_SUBTYPES).indexOf(sub) < 0) throw userError_('Unknown kind of link.');
+    db.Relationships.set(row, 'subtype', sub);
+  } else {
+    throw userError_('Take that one back and send it again.');
+  }
+  if ('source' in body) db[hit.table].set(row, 'source', cleanText_(body.source, CONFIG.MAX_TEXT));
+  db.Contributors.set(me, 'last_seen', nowIso_());
+  return { id: row.id };
 }
 
 function stamp_(ctx, extra) {

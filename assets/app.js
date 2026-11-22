@@ -103,17 +103,68 @@ function fromOwn(p) {
     living, livingRaw: raw, sex: p.sex || '', placeholder: !!p.is_placeholder, pending: true, addedBy: 'you'
   };
 }
+/* This relative's own unconfirmed work, so the page can show it and offer Edit and Take back.
+   OWN_RELS: links they added. OWN_SUGG: their changes to confirmed people and links, by target id.
+   LINK_BASE: each confirmed link's kind before their changes, so a re-edit compares against what Jonny confirmed. */
+let OWN_RELS = [];
+const OWN_SUGG = new Map();
+const LINK_BASE = new Map();
+const REL_BY_ID = new Map();
+
+/* One of their unconfirmed changes, laid over a confirmed person so they see what they sent (Freddy, not Unknown). */
+function applyOwnChange(p, field, v) {
+  const s = v === undefined || v === null ? '' : v;
+  if (field === 'first_name') p.first = s;
+  else if (field === 'middle_name') p.middle = s;
+  else if (field === 'nicknames') p.nicknames = s;
+  else if (field === 'birth_surname' || field === 'married_names') {
+    if (field === 'birth_surname') p.birthSurname = s; else p.married = Array.isArray(s) ? s : [];
+    p.last = p.married.length ? p.married[p.married.length - 1] : p.birthSurname;
+    p.birth = p.married.length ? p.birthSurname : '';
+  }
+  else if (field === 'living') p.livingRaw = s || 'unknown';
+  else if (field === 'birth_date') { p.bornRaw = s; p.born = fuzzyShort(s); }
+  else if (field === 'death_date') { p.diedRaw = s; p.died = fuzzyShort(s); }
+  else if (field === 'birth_place') p.bornPlace = s;
+  else if (field === 'death_place') p.diedPlace = s;
+  else if (field === 'notes') p.notes = s;
+  else if (field === 'sex') p.sex = s;
+  else if (field === 'is_placeholder') p.placeholder = s === true || s === 'true';
+}
+
 function treeToGraphData(tree) {
   const people = [], rels = [];
   (tree.people || []).forEach(p => people.push(fromPublic(p)));
-  PC_ID.clear(); PT_ID.clear();
-  (tree.relationships || []).forEach(r => { if (r.type !== 'partner') PC_ID.set(r.a + '>' + r.b, r.id); else PT_ID.set([r.a, r.b].sort().join('~'), r.id); rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype] : ['pc', r.a, r.b, r.subtype]); });
+  PC_ID.clear(); PT_ID.clear(); LINK_BASE.clear(); REL_BY_ID.clear(); OWN_SUGG.clear();
+  (tree.relationships || []).forEach(r => {
+    const key = r.type !== 'partner' ? r.a + '>' + r.b : [r.a, r.b].sort().join('~');
+    if (r.type !== 'partner') PC_ID.set(key, r.id); else PT_ID.set(key, r.id);
+    LINK_BASE.set(key, r.subtype);
+    const row = r.type === 'partner' ? ['partner', r.a, r.b, r.subtype] : ['pc', r.a, r.b, r.subtype];
+    REL_BY_ID.set(r.id, { r, row }); rels.push(row);
+  });
   const own = tree.own || {};
   (own.people || []).forEach(p => people.push(fromOwn(p)));
   const ids = new Set(people.map(p => p.id));
-  (own.relationships || []).forEach(r => {
-    if (!ids.has(r.a) || !ids.has(r.b)) return;
-    rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype || 'unknown'] : ['pc', r.a, r.b, r.subtype || 'biological', true]);
+  OWN_RELS = (own.relationships || []).filter(r => ids.has(r.a) && ids.has(r.b));
+  OWN_RELS.forEach(r => rels.push(r.type === 'partner' ? ['partner', r.a, r.b, r.subtype || 'unknown'] : ['pc', r.a, r.b, r.subtype || 'biological', true]));
+  // Their changes to confirmed people and links show on their own screen right away, marked "Your edit".
+  const byId = new Map(people.map(p => [p.id, p]));
+  (own.suggestions || []).forEach(s => {
+    const p = byId.get(s.target_id), link = REL_BY_ID.get(s.target_id);
+    if (!p && !link) return;
+    if (!OWN_SUGG.has(s.target_id)) OWN_SUGG.set(s.target_id, []);
+    OWN_SUGG.get(s.target_id).push(s);
+    if (link) { if (s.field === 'subtype' && s.value) link.row[3] = s.value; return; }
+    if (p.pending) return;
+    if (!p.base) p.base = { ...p, married: [...(p.married || [])] };
+    applyOwnChange(p, s.field, s.value);
+    p.edits = OWN_SUGG.get(s.target_id);
+  });
+  people.forEach(p => {
+    if (!p.edits) return;
+    const raw = p.livingRaw || (p.base.placeholder ? 'unknown' : p.base.living ? 'living' : 'deceased'), born = parseFuzzy(p.bornRaw);
+    p.living = !p.placeholder && (raw === 'living' || (raw !== 'deceased' && !p.diedRaw && !(born && born.q !== 'after' && born.y <= new Date().getFullYear() - 110)));
   });
   PHOTOS.clear();
   (tree.photos || []).forEach(f => (f.tags || []).forEach(pid => { if (!PHOTOS.has(pid)) PHOTOS.set(pid, []); PHOTOS.get(pid).push(f); }));
@@ -557,7 +608,7 @@ function cardHTML(n) {
   const yrs = years(p);
   const twice = n.kind === 'person' && connectedTwice(n.id);
   return `<span class="av">${initials(p)}</span><span class="txt"><span class="nm">${esc(cardName(p))}</span><span class="rl">${esc(p.placeholder ? (rel || 'Add a name') : rel)}</span>${yrs ? `<span class="yr">${yrs}</span>` : ''}</span>`
-    + (p.pending ? '<span class="tag">Unconfirmed</span>' : '')
+    + (p.pending ? '<span class="tag">Unconfirmed</span>' : p.edits ? '<span class="tag">Your edit</span>' : '')
     + (twice ? `<span class="twice" title="Related twice">${ICON.rings}twice</span>` : '');
 }
 function foldLabel(key) {
@@ -588,7 +639,7 @@ function updateNodeEl(rec, n) {
   const el = rec.el.firstChild;
   if (n.kind === 'person') {
     const p = P(n.id);
-    el.className = 'card' + (n.id === STATE.focus ? ' focus' : '') + (p.placeholder ? ' placeholder' : '') + (p.pending ? ' pending' : '') + (!isLiving(p) && !p.placeholder ? ' deceased' : '') + (STATE.selected === n.id ? ' selected' : '');
+    el.className = 'card' + (n.id === STATE.focus ? ' focus' : '') + (p.placeholder ? ' placeholder' : '') + (p.pending || p.edits ? ' pending' : '') + (!isLiving(p) && !p.placeholder ? ' deceased' : '') + (STATE.selected === n.id ? ' selected' : '');
     el.innerHTML = cardHTML(n);
     el.setAttribute('aria-label', displayName(p) + ', ' + relation(n.id));
     rec.el.querySelectorAll('.fold, .more').forEach(f => f.remove());
@@ -922,6 +973,51 @@ function missingParentPairs(id) {
   partnersOf(id).forEach(x => childrenOf(x.id).forEach(c => { const cp = parentsOf(c); if (cp.length === 1 && cp[0] === x.id && c !== id && !P(c).placeholder) out.set(id + '>' + c, [id, c]); }));
   return [...out.entries()].filter(([k]) => !no.includes(k)).map(([, v]) => v);
 }
+/* What this relative sent about a person that Jonny hasn't confirmed yet, each with Take back.
+   (Their own unconfirmed people carry Edit and Take back on their card instead.) */
+const FIELD_WORDS = { first_name: 'first name', middle_name: 'middle name', nicknames: 'nickname', birth_surname: 'last name',
+  married_names: 'last names', living: 'living or not', birth_date: 'birth date', death_date: 'death date', birth_place: 'birthplace',
+  death_place: 'place of death', notes: 'story', sex: 'sex', is_placeholder: 'name' };
+const whoIs = q => q.placeholder ? 'an unknown person' : displayName(q);
+function ownWork(id) {
+  const p = P(id), rows = [];
+  if (p.edits) {
+    const words = [...new Set(p.edits.map(s => FIELD_WORDS[s.field] || 'details'))];
+    rows.push({ text: `You changed ${esc(p.base.placeholder ? 'who this is' : andList(words))}.`, ids: p.edits.map(s => s.id), ask: 'Take back your changes?', done: 'Your changes are taken back.' });
+  }
+  if (p.pending) return rows;
+  OWN_RELS.filter(r => r.a === id || r.b === id).forEach(r => {
+    const other = r.a === id ? r.b : r.a, o = P(other);
+    const alone = o.pending && OWN_RELS.filter(x => x.a === other || x.b === other).length === 1;
+    rows.push({ text: `You linked ${esc(r.type === 'partner' ? `${whoIs(P(r.a))} and ${whoIs(P(r.b))} as partners` : `${whoIs(P(r.a))} as ${whoIs(P(r.b))}'s parent`)}.`,
+      ids: [r.id], ask: alone ? `Take back this link? ${esc(whoIs(o))} goes too, since nothing else connects them.` : 'Take back this link?', done: 'Link taken back.' });
+  });
+  [...PC_ID, ...PT_ID].filter(([k]) => k.split(/[>~]/).includes(id)).forEach(([k, rid]) => (OWN_SUGG.get(rid) || []).forEach(s => {
+    const [a, b] = k.split(/[>~]/), pair = k.includes('~') ? `${whoIs(P(a))} and ${whoIs(P(b))} were never partners` : `${whoIs(P(a))} is not ${whoIs(P(b))}'s parent`;
+    rows.push({ text: esc(s.field === 'remove' ? `You said ${pair}.` : `You changed how ${whoIs(P(a))} and ${whoIs(P(b))} are linked.`), ids: [s.id], ask: 'Take that back?', done: 'Taken back.' });
+  }));
+  return rows;
+}
+/* Take back their own unconfirmed entries. If the card in the middle of the tree goes with them, center on a relative who stays. */
+async function takeBack(ids, done, stay) {
+  let res;
+  try { res = await api({ action: 'withdraw', ids }); } catch (err) { toast(err.message); return false; }
+  const gone = new Set(res.withdrawn || []);
+  if (gone.has(STATE.focus)) STATE.focus = (stay && !gone.has(stay) && stay) || (STATE.viewer && !gone.has(STATE.viewer) && STATE.viewer) || [...G.people.keys()].find(x => !gone.has(x) && !P(x).placeholder) || STATE.focus;
+  if (gone.has(STATE.viewer)) STATE.viewer = null;
+  closePanel(); toast(done); await reload();
+  return true;
+}
+/* A Take back button asks once, in place, before doing anything. */
+function confirmInPlace(btn, ask, run) {
+  const box = btn.closest('[data-tbrow]') || btn.parentElement;
+  box.innerHTML = `<span>${ask}</span><span class="nbtns"><button class="nbtn yes" data-go>Yes, take back</button><button class="nbtn" data-keep>Keep</button></span>`;
+  box.classList.add('asking');
+  box.querySelector('[data-keep]').onclick = () => openPerson(STATE.selected || '');
+  box.querySelector('[data-go]').onclick = async () => { box.querySelectorAll('button').forEach(x => { x.disabled = true; }); if (!await run()) openPerson(STATE.selected); };
+}
+function neighborOf(id) { return [...parentsOf(id), ...childrenOf(id), ...partnersOf(id).map(x => x.id)].find(x => !P(x).pending && !P(x).placeholder); }
+
 function openPerson(id) {
   STATE.selected = id; refreshCards();
   const p = P(id), living = isLiving(p), rel = relation(id), twice = connectedTwice(id);
@@ -955,7 +1051,10 @@ function openPerson(id) {
       <span class="nbtns"><button class="nbtn yes" data-yes>Yes, link them</button><button class="nbtn" data-no>No</button></span></div>`;
   });
   if (twice) body += `<div class="twicebox">${ICON.rings}<span>Related twice: ${esc(p.first)} and ${esc(P(twice.partner).first)} both descend from ${esc(displayName(P(twice.ancestor)))}.</span></div>`;
-  if (p.pending) body += `<div class="private"><span>You added ${esc(p.first || 'this')}. ${OWNER_NAME} hasn't confirmed it yet, so only you can see it.</span></div>`;
+  if (p.pending) body += `<div class="ownwork" data-tbrow><span>You added ${esc(p.placeholder ? 'this unknown person' : p.first || 'this')}. ${OWNER_NAME} hasn't confirmed it yet, so only you can see it. Spot a mistake? <b>Edit</b> fixes it, <b>Take back</b> removes it.</span></div>`;
+  const work = ownWork(id);
+  if (work.length) body += `<div class="ownwork"><span class="owhead">Waiting for ${OWNER_NAME}. Only you see ${work.length > 1 ? 'these' : 'this'} until he confirms.</span>${work.map((w, i) =>
+    `<div class="owrow" data-tbrow><span>${w.text}</span><button class="nbtn" data-tb="${i}">Take back</button></div>`).join('')}</div>`;
   if (!p.placeholder && !p.pending) {
     const ph = PHOTOS.get(id) || [];
     const tiles = ph.slice(0, 6).map(f => `<a class="photo real" href="${photoURL(f.file_id, 1600)}" target="_blank" rel="noopener" title="${esc(f.caption || 'Photo')}"><img src="${photoURL(f.file_id, 400)}" alt="${esc(f.caption || 'Photo of ' + p.first)}" loading="lazy"></a>`).join('');
@@ -972,10 +1071,20 @@ function openPerson(id) {
     <div class="foot">
       ${isFocus ? '' : `<button class="primary" id="pCenter">Center the tree on ${esc(p.placeholder ? 'them' : p.first)}</button>`}
       <button class="iconbtn" id="pAdd">Add a relative</button>
-      ${p.pending ? '' : `<button class="iconbtn" id="pEdit">${p.placeholder ? 'Fill in' : 'Edit'}</button>`}
+      <button class="iconbtn" id="pEdit">${p.placeholder ? 'Fill in' : 'Edit'}</button>
+      ${p.pending ? '<button class="iconbtn" id="pTakeBack">Take back</button>' : ''}
       ${canClaim ? '<button class="iconbtn" id="pMe">This is me</button>' : ''}
     </div>`);
   $('#pClose').onclick = closePanel;
+  document.querySelectorAll('[data-tb]').forEach(b => b.onclick = () => {
+    const w = work[+b.dataset.tb];
+    confirmInPlace(b, w.ask, () => takeBack(w.ids, w.done, id));
+  });
+  if ($('#pTakeBack')) $('#pTakeBack').onclick = () => {
+    const links = OWN_RELS.filter(r => r.a === id || r.b === id).length;
+    confirmInPlace($('.ownwork[data-tbrow] span'), `Take back ${esc(p.placeholder ? 'this unknown person' : p.first || 'this person')}${links ? ` and the link${links > 1 ? 's' : ''} you added with them` : ''}? ${OWNER_NAME} won't see ${links ? 'them' : 'it'}.`,
+      () => takeBack([id], p.placeholder ? 'Taken back.' : `${p.first || 'They'} is taken back.`, neighborOf(id)));
+  };
   if (!isFocus) $('#pCenter').onclick = () => { closePanel(); STATE.focus = id; render(); };
   $('#pAdd').onclick = () => openAdd(id);
   if ($('#pEdit')) $('#pEdit').onclick = () => openEdit(id);
@@ -1036,19 +1145,23 @@ const PT_KINDS = [['married', 'Married'], ['partner', 'Partners'], ['divorced', 
 /* In the edit form: each confirmed partnership with whether it's still going. */
 function partnerKindsHTML(id) {
   const rows = partnersOf(id).filter(x => PT_ID.has([id, x.id].sort().join('~')) && !P(x.id).placeholder).map(x => {
-    const cur = PT_KINDS.some(([v]) => v === x.sub) ? x.sub : 'married';
-    return `<div class="field"><label for="fPt_${esc(x.id)}">${esc(displayName(P(x.id)))}</label><select id="fPt_${esc(x.id)}" data-partner="${esc(x.id)}" data-was="${esc(x.sub || '')}">${PT_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}<option value="${REMOVE}">Never partners: remove this link</option></select></div>`;
+    const key = [id, x.id].sort().join('~'), base = LINK_BASE.has(key) ? LINK_BASE.get(key) : x.sub;
+    const removing = (OWN_SUGG.get(PT_ID.get(key)) || []).some(s => s.field === 'remove');
+    const cur = removing ? REMOVE : PT_KINDS.some(([v]) => v === x.sub) ? x.sub : 'married';
+    return `<div class="field"><label for="fPt_${esc(x.id)}">${esc(displayName(P(x.id)))}</label><select id="fPt_${esc(x.id)}" data-partner="${esc(x.id)}" data-was="${esc(base || '')}">${PT_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}<option value="${REMOVE}"${cur === REMOVE ? ' selected' : ''}>Never partners: remove this link</option></select></div>`;
   });
   return rows.length ? `<div class="label">Marriages and partners</div><div class="row2">${rows.join('')}</div>` : '';
 }
 function parentKindsHTML(id) {
   const rows = parentsOf(id).filter(q => PC_ID.has(q + '>' + id) && !P(q).placeholder).map(q => {
-    const cur = G.pcSub.get(q + '>' + id) || 'biological';
-    const known = PC_KINDS.some(([v]) => v === cur);
+    const key = q + '>' + id, base = LINK_BASE.has(key) ? LINK_BASE.get(key) || 'biological' : G.pcSub.get(key) || 'biological';
+    const removing = (OWN_SUGG.get(PC_ID.get(key)) || []).some(s => s.field === 'remove');
+    const cur = removing ? REMOVE : G.pcSub.get(key) || 'biological';
+    const known = cur === REMOVE || PC_KINDS.some(([v]) => v === cur), knownBase = PC_KINDS.some(([v]) => v === base);
     const opts = (known ? '' : `<option value="" selected>Keep as is</option>`) +
       PC_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l} parent</option>`).join('') +
-      `<option value="${REMOVE}">Not their parent: remove this link</option>`;
-    return `<div class="field"><label for="fPk_${esc(q)}">${esc(displayName(P(q)))}</label><select id="fPk_${esc(q)}" data-parent="${esc(q)}" data-was="${known ? cur : ''}">${opts}</select></div>`;
+      `<option value="${REMOVE}"${cur === REMOVE ? ' selected' : ''}>Not their parent: remove this link</option>`;
+    return `<div class="field"><label for="fPk_${esc(q)}">${esc(displayName(P(q)))}</label><select id="fPk_${esc(q)}" data-parent="${esc(q)}" data-was="${knownBase ? base : ''}">${opts}</select></div>`;
   });
   const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
   return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents</div><div class="row2">${rows.join('')}</div>` +
@@ -1065,11 +1178,14 @@ function addNameRow(v = '', focus = true) {
 function fieldsHTML(p, livingV, opts = {}) {
   const nm = namesFromPerson(p);
   const showMore = !!(nm.birthName || nm.otherNames.length);
+  const noName = (!opts.edit || opts.noName) && !p.placeholder, unk = noName && isNoName(p);
   return `
+    <div id="fNameBlock"${unk ? ' hidden' : ''}>
     <div class="row2"><div class="field"><label for="fFirst">First name</label><input id="fFirst" value="${esc(p.first || '')}" autocomplete="off"><div class="dups" id="dups"></div></div>
       <div class="field"><label for="fMiddle">Middle name</label><input id="fMiddle" value="${esc(p.middle || '')}" autocomplete="off"></div></div>
     <div class="row2"><div class="field"><label for="fLast">Last name now</label><input id="fLast" value="${esc(nm.last)}" autocomplete="off" placeholder="Or their last one"></div>
-      <div class="field"><label for="fNick">Goes by</label><input id="fNick" value="${esc(p.nicknames || '')}" autocomplete="off" placeholder="Bob, Aunt Dee"></div></div>
+      <div class="field"><label for="fNick">Nickname</label><input id="fNick" value="${esc(p.nicknames || '')}" autocomplete="off" placeholder="Bobby, Dee"></div></div>
+    <p class="hint warn" id="fNickWarn" hidden>Nickname is what everyone calls them, and it shows on their card. The tree works out Mom, Grandma or Uncle by itself, so leave that part out.</p>
     <button type="button" class="morelink" id="fNamesBtn"${showMore ? ' hidden' : ''}>+ Maiden name or earlier last names</button>
     <div class="namesmore" id="fNamesMore"${showMore ? '' : ' hidden'}>
       <div class="field"><label for="fBirthName">Last name at birth</label><input id="fBirthName" value="${esc(nm.birthName)}" autocomplete="off" placeholder="If different from now"></div>
@@ -1077,6 +1193,9 @@ function fieldsHTML(p, livingV, opts = {}) {
         <button type="button" class="morelink" id="fAddName">+ Add a last name</button>
         <p class="hint">One per marriage or change. A married name that matches a spouse in the tree is linked to that marriage on its own.</p></div>
     </div>
+    </div>
+    ${noName ? `<label class="kid noname"><input type="checkbox" id="fNoName"${unk ? ' checked' : ''}><span>I don't know their name</span></label>
+    <p class="hint" id="fNoNameHint"${unk ? '' : ' hidden'}>They'll show as Unknown. Add what you do know below, and anyone who knows the name can fill it in later.</p>` : ''}
     ${livingSeg(livingV)}
     <div class="row2"><div class="field"><label for="fBorn">Born</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1932, about 1932, May 14, 1932"></div>
       <div class="field"><label for="fDied">Died</label><input id="fDied" value="${esc(fuzzyToText(p.diedRaw))}" placeholder="Year or date"></div></div>
@@ -1085,8 +1204,11 @@ function fieldsHTML(p, livingV, opts = {}) {
     <div class="field"><label for="fSource">Information source</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(opts.edit ? '' : (p.source || ''))}"></div>
     ${whoField()}
     <p class="formerr" id="formErr" role="alert" hidden></p>
-    <p class="hint">Only a name is needed. "Unknown" counts as a name. For living people, only names show (first, middle, goes by, last now); everything else stays private.</p>`;
+    <p class="hint">Only a name is needed, and "I don't know their name" works too. For living people, only names show (first, middle, nickname, last now); everything else stays private.</p>`;
 }
+const isNoName = q => !q.placeholder && sameName(q.first, 'Unknown') && !q.middle && !q.last && !q.nicknames;
+// "Mom", "great Grandma", "Uncle Rob": what the person typing calls them, not a nickname. A gentle note, never a block.
+const KIN_WORD = /^(my |our )?((great|gr8)[- ]?)*(grand)?(ma|mom|mommy|mother|mama|pa|dad|daddy|father|papa|nana|nanna|granny|gramma|grammy|grandma|grandpa|grampa|gramps|grandmother|grandfather)$|^(aunt|auntie|aunty|uncle|cousin|sister|brother|sis|bro|step[- ]?\w+)\b/i;
 function wireSeg(id, onChange) {
   document.querySelectorAll('#' + id + ' button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#' + id + ' button').forEach(x => x.setAttribute('aria-pressed', x === b));
@@ -1104,7 +1226,7 @@ function watchForm(kind, anchor, extra = {}) {
   form.addEventListener('input', keep);
   // Tapping a button on an empty add form isn't worth a "Save what you typed?" question.
   form.addEventListener('click', e => {
-    if (!e.target.closest('.seg button')) return;
+    if (!e.target.closest('.seg button, #fNoName')) return;
     const f = readForm();
     if (kind === 'add' && ![f.first, f.middle, f.last, f.nick, f.birthName, f.otherNames.length, f.born, f.died, f.bornPlace, f.notes, f.source].some(Boolean)) return;
     keep();
@@ -1118,9 +1240,17 @@ function fillForm(f) {
   if ($('#fOtherList')) { $('#fOtherList').innerHTML = ''; others.forEach(v => addNameRow(v.trim(), false)); }
   if (f.birthName || others.length) showNames(); set('fBorn', f.born); set('fDied', f.died); set('fPlace', f.bornPlace); set('fNotes', f.notes); set('fSource', f.source);
   document.querySelectorAll('#fLiving button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === f.living));
+  if (f.noName && $('#fNoName')) { $('#fNoName').checked = true; syncNoName(); }
+}
+function syncNoName() {
+  const on = !!($('#fNoName') && $('#fNoName').checked);
+  if ($('#fNameBlock')) $('#fNameBlock').hidden = on;
+  if ($('#fNoNameHint')) $('#fNoNameHint').hidden = !on;
 }
 function readForm() {
   const v = id => (($('#' + id) || {}).value || '').trim();
+  const noName = !!($('#fNoName') && $('#fNoName').checked);
+  if (noName) return { noName, first: '', middle: '', last: '', nick: '', birthName: '', otherNames: [], born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
   return { first: v('fFirst'), middle: v('fMiddle'), last: v('fLast'), nick: v('fNick'), birthName: v('fBirthName'), otherNames: [...document.querySelectorAll('.fOtherName')].map(x => x.value.trim()).filter(Boolean), born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
 }
 function showNames() { const m = $('#fNamesMore'), b = $('#fNamesBtn'); if (m) m.hidden = false; if (b) b.hidden = true; }
@@ -1133,6 +1263,9 @@ function wireCommon() {
     document.querySelectorAll('#fLiving button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === 'deceased'));
   });
   const nb = $('#fNamesBtn'); if (nb) nb.onclick = () => { showNames(); $('#fBirthName').focus(); };
+  const nn = $('#fNoName'); if (nn) nn.onchange = syncNoName;
+  const nick = $('#fNick'), warn = $('#fNickWarn');
+  if (nick && warn) { const w = () => { warn.hidden = !KIN_WORD.test(nick.value.trim()); }; nick.addEventListener('input', w); w(); }
   const an = $('#fAddName'); if (an) an.onclick = () => addNameRow();
   document.querySelectorAll('#fOtherList .namerow').forEach(row => { row.querySelector('.rm').onclick = () => { row.remove(); formDirty = true; }; });
 }
@@ -1188,11 +1321,18 @@ function wireDupCheck(onPick) {
 
 function openEdit(id, restore) {
   const p = P(id);
-  const lv = p.placeholder ? 'unknown' : p.livingRaw || (isLiving(p) ? 'living' : 'deceased');
+  // Their own unconfirmed person: the fix rewrites what they sent. A confirmed person: changes are compared with what
+  // Jonny confirmed (p.base), and any changes they sent earlier are replaced, not stacked.
+  const own = !!p.pending, b = p.base || p;
+  const lvOf = q => q.placeholder ? 'unknown' : q.livingRaw || (isLiving(q) ? 'living' : 'deceased');
+  const lv = lvOf(b), lvNow = p.edits && !p.livingRaw && b.placeholder ? 'unknown' : lvOf(p);
+  const sub = ADMIN_KEY ? 'Owner mode: changes go live right away.'
+    : own ? `Still waiting for ${OWNER_NAME}, so your fix replaces what you sent.`
+    : `Your changes go to ${OWNER_NAME} to confirm. Nobody's entry gets overwritten.`;
   openPanel(`
-    <div class="head"><div><h2>${p.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">${ADMIN_KEY ? 'Owner mode: changes go live right away.' : `Your changes go to ${OWNER_NAME} to confirm. Nobody's entry gets overwritten.`}</div></div>
+    <div class="head"><div><h2>${b.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">${sub}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
-    <form class="body form" id="editForm" novalidate>${fieldsHTML(p, lv, { edit: true })}${p.pending ? '' : parentKindsHTML(id) + partnerKindsHTML(id)}</form>
+    <form class="body form" id="editForm" novalidate>${fieldsHTML(p, lvNow, { edit: !own, noName: own || isNoName(p) })}${own ? '' : parentKindsHTML(id) + partnerKindsHTML(id)}</form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
   wireCommon();
   if (restore) fillForm(restore.fields);
@@ -1200,18 +1340,43 @@ function openEdit(id, restore) {
   if (restore) formDirty = true;
   $('#pClose').onclick = () => guardClose(); $('#pBack').onclick = () => guardClose(() => openPerson(id));
   $('#editForm').onsubmit = e => { e.preventDefault(); currentSave(); };
+  const done = f => {
+    busy(false); clearDraft(); closePanel();
+    const who = f.first || p.first || 'it';
+    showThanks(own ? `Fixed. ${esc(who === 'Unknown' ? 'Your entry' : who)} is updated.` : `Thank you. Your changes to ${esc(who)} are saved.`,
+      ADMIN_KEY ? 'Owner mode: they went live right away.'
+      : own ? `${OWNER_NAME} will see the new version, not the old one.`
+      : `${OWNER_NAME} looks over every change before everyone sees it. Until then you see them on your tree, marked "Your edit". Both versions stay on record, with who said each.`);
+    reload();
+  };
   $('#pSave').onclick = currentSave = async () => {
     const f = readForm();
+    if (own) {
+      let data;
+      try {
+        data = personData(f);
+        if (p.placeholder && !f.first && !f.last && !f.nick) { delete data.first_name; data.is_placeholder = true; }
+        else if (p.placeholder) data.is_placeholder = false;
+      } catch (err) { formError(err.message); return; }
+      formError(''); busy(true);
+      try { if (f.who) store.set('roots_display_name', f.who); await api({ action: 'own_edit', id, data, source: f.source }); }
+      catch (err) { busy(false); formError(err.message); return; }
+      done(f); return;
+    }
     let changes;
+    // Their earlier unconfirmed changes to this person and its links: replaced by this save.
+    const linkIds = [...PC_ID, ...PT_ID].filter(([k]) => k.split(/[>~]/).includes(id)).map(([, rid]) => rid);
+    const earlier = [id, ...linkIds].flatMap(t => (OWN_SUGG.get(t) || []).map(s => s.id));
     try {
-      const n0 = namesFromPerson(p), was0 = namesToData(n0.last, n0.birthName, n0.otherNames), now0 = namesToData(f.last, f.birthName, f.otherNames);
-      const was = { first_name: p.placeholder ? '' : p.first, middle_name: p.middle || '', nicknames: p.nicknames || '', birth_surname: was0.birth_surname, married_names: JSON.stringify(was0.married_names), living: lv,
-        birth_date: p.bornRaw || '', death_date: p.diedRaw || '', birth_place: p.bornPlace || '', notes: p.notes || '' };
+      const n0 = namesFromPerson(b), was0 = namesToData(n0.last, n0.birthName, n0.otherNames), now0 = namesToData(f.last, f.birthName, f.otherNames);
+      const was = { first_name: b.placeholder ? '' : b.first, middle_name: b.middle || '', nicknames: b.nicknames || '', birth_surname: was0.birth_surname, married_names: JSON.stringify(was0.married_names), living: lv,
+        birth_date: b.bornRaw || '', death_date: b.diedRaw || '', birth_place: b.bornPlace || '', notes: b.notes || '' };
       const now = { first_name: f.first, middle_name: f.middle, nicknames: f.nick, birth_surname: now0.birth_surname, married_names: JSON.stringify(now0.married_names), living: f.living, birth_date: toFuzzy(f.born, 'Born'),
         death_date: toFuzzy(f.died, 'Died'), birth_place: f.bornPlace, notes: f.notes };
+      if (f.noName && !b.placeholder) now.first_name = 'Unknown';
       changes = Object.keys(now).filter(k => now[k] !== was[k])
         .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: k === 'married_names' ? JSON.parse(now[k]) : now[k], source: f.source }));
-      if (p.placeholder && (f.first || f.last)) changes.push({ kind: 'suggestion', target_id: id, field: 'is_placeholder', value: false, source: f.source });
+      if (b.placeholder && (f.first || f.last)) changes.push({ kind: 'suggestion', target_id: id, field: 'is_placeholder', value: false, source: f.source });
       document.querySelectorAll('#editForm select[data-parent]').forEach(sel => {
         if (sel.value && sel.value !== sel.dataset.was) changes.push(linkChange(PC_ID.get(sel.dataset.parent + '>' + id), sel.value, f.source));
       });
@@ -1219,15 +1384,15 @@ function openEdit(id, restore) {
         if (sel.value !== sel.dataset.was) changes.push(linkChange(PT_ID.get([id, sel.dataset.partner].sort().join('~')), sel.value, f.source));
       });
     } catch (err) { formError(err.message); return; }
-    if (!changes.length) { formError("Nothing has changed yet."); return; }
+    if (!changes.length && !earlier.length) { formError("Nothing has changed yet."); return; }
     formError(''); busy(true);
-    try { await submit(changes, f); }
+    try {
+      if (changes.length) await api({ action: 'submit', display_name: f.who || myName() || undefined, items: changes, withdraw: earlier.length ? earlier : undefined });
+      else await api({ action: 'withdraw', ids: earlier });   // they put everything back the way Jonny confirmed it
+      if (f.who) store.set('roots_display_name', f.who);
+    }
     catch (err) { busy(false); formError(err.message); return; }
-    busy(false); clearDraft(); closePanel();
-    const who = f.first || p.first || 'it';
-    showThanks(`Thank you. Your changes to ${esc(who)} are saved.`, ADMIN_KEY ? 'Owner mode: they went live right away.'
-      : `${OWNER_NAME} looks over every change before everyone sees it. Both versions stay on record, with who said each.`);
-    reload();
+    done(f);
   };
 }
 
@@ -1371,7 +1536,7 @@ function openAdd(id, opts = {}) {
     const me = link || 'new:1';
     const items = [];
     if (!link) {
-      if (!f.first && !f.last) throw new Error('Add at least a name. "Unknown" works.');
+      if (!f.first && !f.last && !f.noName) throw new Error('Add at least a name, or tick "I don\'t know their name".');
       items.push({ kind: 'person', ref: 'new:1', data: personData(f), source: f.source });
     }
     if (p) {
@@ -1742,7 +1907,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = 'f0ee4008de';
+  const BUILD = '7b71020ca4';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

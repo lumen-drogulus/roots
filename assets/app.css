@@ -273,3 +273,16 @@ button:disabled { opacity: .55; cursor: progress; }
 .pick .who em { font-style: normal; font-size: 13px; color: var(--ink-soft); }
 .pick .who em:empty { display: none; }
 .pick button { align-items: center; }
+
+/* A relative's own unconfirmed work: what they added or changed, each with Take back (2026-11-21). */
+.ownwork { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 14px; background: #FFF9EC; border: 1.5px dashed var(--gilt); font-size: 14.5px; line-height: 1.45; }
+.ownwork .owhead { color: var(--ink-soft); font-size: 13.5px; }
+.ownwork .owrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ownwork .owrow > span:first-child { flex: 1 1 180px; }
+.ownwork .asking { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ownwork.asking > span:first-child, .ownwork .asking > span:first-child { flex: 1 1 100%; }
+.ownwork .nbtns { display: flex; gap: 8px; }
+.ownwork .nbtn { padding: 7px 14px; font-size: 14px; }
+.hint.warn { color: #7A5D1E; background: #FBF6E9; border-radius: 10px; padding: 8px 10px; margin-top: -4px; }
+.noname { display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer; }
+.noname input { width: 20px; height: 20px; accent-color: var(--forest, #1D2B24); }
