@@ -119,6 +119,8 @@ async function reload(opts = {}) {
   // Just saved someone who has no place on screen from here: center on the person they were added to,
   // whose close family always draws, so the new person never seems to vanish.
   let moved = false;
+  // On the wheel a new parent lands in the spot that was tapped, so the center stays put.
+  if (showAfterSave && STATE.view === 'wheel') showAfterSave = null;
   if (showAfterSave) {
     const { anchor, ids } = showAfterSave; showAfterSave = null;
     const added = ids.filter(x => G.people.has(x));

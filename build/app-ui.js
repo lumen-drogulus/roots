@@ -175,7 +175,7 @@ function openPerson(id) {
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <div class="body">${body}</div>
     <div class="foot">
-      ${isFocus ? '' : `<button class="primary" id="pCenter">Center the tree on ${esc(p.placeholder ? 'them' : p.first)}</button>`}
+      ${isFocus ? '' : `<button class="primary" id="pCenter">${STATE.view === 'wheel' ? `Put ${esc(p.placeholder ? 'them' : p.first)} in the middle` : `Center the tree on ${esc(p.placeholder ? 'them' : p.first)}`}</button>`}
       <button class="iconbtn" id="pAdd">Add a relative</button>
       <button class="iconbtn" id="pEdit">${p.placeholder ? 'Fill in' : 'Edit'}</button>
       ${p.pending ? '<button class="iconbtn" id="pTakeBack">Take back</button>' : ''}

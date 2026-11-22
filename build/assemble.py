@@ -31,6 +31,13 @@ body = rep(body, '<div class="scrim" id="scrim"></div>', '''<div class="state" i
 # "Show all" opens every bud, but in a big family it can't show everyone; the button says what it does.
 body = rep(body, 'aria-label="Show all branches"', 'aria-label="Open all branches"')
 body = rep(body, '<span class="lbl">Show all</span>', '<span class="lbl">Open all</span>')
+# Wheel view (2026-11-22): a Tree / Wheel switch in the top bar, and the wheel's own layer beside the tree's.
+body = rep(body, '  <button class="iconbtn" id="btnSearch"', '''  <div class="viewsw" role="group" aria-label="View">
+    <button id="btnViewTree" aria-pressed="true" aria-label="Tree view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="4" rx="1.5"/><rect x="3" y="16" width="6" height="4" rx="1.5"/><rect x="15" y="16" width="6" height="4" rx="1.5"/><path d="M12 7v4M6 16v-3h12v3"/></svg><span class="lbl">Tree</span></button>
+    <button id="btnViewWheel" aria-pressed="false" aria-label="Wheel view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="10"/><path d="M2 12h7M15 12h7"/></svg><span class="lbl">Wheel</span></button>
+  </div>
+  <button class="iconbtn" id="btnSearch"''')
+body = rep(body, '</main>\n', '</main>\n<div id="wheel" hidden></div>\n')
 head = open('build/head.html').read()
 open('index.html', 'w').write(head + '<body>' + body + '<script src="config.js"></script>\n<script src="assets/app.js"></script>\n</body>\n</html>\n')
 
@@ -298,7 +305,7 @@ engine = rep(engine, "    if (t.parents.length === 2) { pedPlace(t.parents[0], x
   "    if (t.parents.length === 2) { occupy(g + 1, x - t.da, x + t.db); pedPlace(t.parents[0], x - t.da, g + 1); pedPlace(t.parents[1], x + t.db, g + 1); }")
 ui = open('build/app-ui.js').read()
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
-app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-boot.js').read()
+app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-boot.js').read()
 # Busy = a form or card is open: the freshness check waits rather than reload under someone's typing.
 app += "\nwindow.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || saving;\n"
 

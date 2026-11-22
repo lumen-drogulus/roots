@@ -295,3 +295,34 @@ button:disabled { opacity: .55; cursor: progress; }
 
 /* Add tile carries a longer label now that documents are uploadable too (2026-11-22). */
 .photo.add { text-align: center; padding: 6px; line-height: 1.3; }
+
+/* ---------- Wheel view (2026-11-22) ---------- */
+.viewsw { display: inline-flex; padding: 3px; gap: 2px; border-radius: 22px; background: var(--card); border: 1px solid var(--line); }
+.viewsw button { height: 34px; padding: 0 12px; border-radius: 17px; border: 0; background: transparent; color: var(--ink); display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 14px; cursor: pointer; }
+.viewsw button svg { width: 18px; height: 18px; flex: none; }
+.viewsw button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.viewsw button:focus-visible { outline: 2px solid var(--gilt); outline-offset: 1px; }
+@media (max-width: 640px) { .viewsw .lbl { display: none; } .viewsw button { height: 32px; padding: 0 8px; } }
+body.wheelmode #stage, body.wheelmode #btnAll, body.wheelmode #btnZoomIn, body.wheelmode #btnZoomOut { display: none; }
+#wheel { position: fixed; inset: 0; z-index: 1; }
+#wheel svg { display: block; font-family: var(--font-ui); }
+#wheel.grow svg { animation: wheelgrow .45s var(--ease); transform-origin: 50% 50%; }
+@keyframes wheelgrow { from { opacity: 0; transform: scale(.96); } }
+#wheel .wedge { cursor: pointer; outline: none; }
+#wheel .wedge > path:first-child { stroke: var(--bg); stroke-width: 2.5; transition: fill .15s; }
+#wheel .wedge:hover > path:first-child { fill: #FFFDF9; }
+#wheel .wedge.sel > path:first-child, #wheel .wedge:focus-visible > path:first-child { stroke: var(--ink); stroke-width: 2; }
+#wheel .wedge .dash { fill: none; stroke: rgba(29, 43, 36, .45); stroke-width: 1.3; stroke-dasharray: 4 3; }
+#wheel .wedge .pdash { fill: none; stroke: var(--gilt); stroke-width: 1.5; stroke-dasharray: 5 3; }
+#wheel .wedge .twice { fill: none; stroke: var(--gilt); stroke-width: 2; }
+#wheel .wedge.add > path { fill: rgba(255, 253, 249, .32); stroke: var(--gilt); stroke-width: 1.4; stroke-dasharray: 5 4; }
+#wheel .wedge.add:hover > path { fill: rgba(255, 253, 249, .75); }
+#wheel .wl, #wheel .more, #wheel .ground, #wheel .side, #wheel .hub text { pointer-events: none; }
+#wheel .more { fill: var(--gilt); }
+#wheel .ground { stroke: var(--ink); stroke-width: 1.6; opacity: .5; }
+#wheel .side { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; fill: var(--ink-soft); font-weight: 500; }
+#wheel .hub { cursor: pointer; outline: none; }
+#wheel .hub:focus-visible circle:last-of-type { stroke-width: 4; }
+#wheel .htag { fill: var(--gilt-light); letter-spacing: .12em; font-weight: 500; text-anchor: middle; }
+#wheel .hnm { fill: #FFFDF9; font-weight: 500; text-anchor: middle; }
+#wheel .hln { fill: var(--bone); text-anchor: middle; }
