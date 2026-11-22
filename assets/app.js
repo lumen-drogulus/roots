@@ -1046,7 +1046,7 @@ function openPerson(id) {
     ...childrenOf(id).filter(c => kindWords[G.pcSub.get(id + '>' + c)]).map(c => `${esc(p.first || 'They')} is ${esc(displayName(P(c)))}'s ${kindWords[G.pcSub.get(id + '>' + c)]}.`)
   ];
   if (kinLines.length && !p.placeholder) body += `<p class="kinline">${kinLines.join(' ')}</p>`;
-  if (!p.placeholder && !p.pending) missingParentPairs(id).forEach(([a, b]) => {
+  if (!p.placeholder) missingParentPairs(id).forEach(([a, b]) => {
     body += `<div class="nudge" data-pair="${esc(a + '>' + b)}"><span>Is <b>${esc(displayName(P(a)))}</b> also <b>${esc(displayName(P(b)))}</b>'s parent?</span>
       <span class="nbtns"><button class="nbtn yes" data-yes>Yes, link them</button><button class="nbtn" data-no>No</button></span></div>`;
   });
@@ -1180,6 +1180,7 @@ function fieldsHTML(p, livingV, opts = {}) {
   const showMore = !!(nm.birthName || nm.otherNames.length);
   const noName = (!opts.edit || opts.noName) && !p.placeholder, unk = noName && isNoName(p);
   return `
+    <div id="fPersonFields">
     <div id="fNameBlock"${unk ? ' hidden' : ''}>
     <div class="row2"><div class="field"><label for="fFirst">First name</label><input id="fFirst" value="${esc(p.first || '')}" autocomplete="off"><div class="dups" id="dups"></div></div>
       <div class="field"><label for="fMiddle">Middle name</label><input id="fMiddle" value="${esc(p.middle || '')}" autocomplete="off"></div></div>
@@ -1201,10 +1202,11 @@ function fieldsHTML(p, livingV, opts = {}) {
       <div class="field"><label for="fDied">Died</label><input id="fDied" value="${esc(fuzzyToText(p.diedRaw))}" placeholder="Year or date"></div></div>
     <div class="field"><label for="fPlace">Where were they born?</label><input id="fPlace" value="${esc(p.bornPlace || '')}" placeholder="&quot;Cleveland&quot; or &quot;somewhere in Ohio&quot; is fine"></div>
     <div class="field"><label for="fNotes">Anything you remember</label><textarea id="fNotes" placeholder="A job, a habit, a story they told">${esc(p.notes || '')}</textarea></div>
+    </div>
     <div class="field"><label for="fSource">Information source</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(opts.edit ? '' : (p.source || ''))}"></div>
     ${whoField()}
     <p class="formerr" id="formErr" role="alert" hidden></p>
-    <p class="hint">Only a name is needed, and "I don't know their name" works too. For living people, only names show (first, middle, nickname, last now); everything else stays private.</p>`;
+    <p class="hint" id="fNameHint">Only a name is needed, and "I don't know their name" works too. For living people, only names show (first, middle, nickname, last now); everything else stays private.</p>`;
 }
 const isNoName = q => !q.placeholder && sameName(q.first, 'Unknown') && !q.middle && !q.last && !q.nicknames;
 // "Mom", "great Grandma", "Uncle Rob": what the person typing calls them, not a nickname. A gentle note, never a block.
@@ -1420,6 +1422,8 @@ function openAdd(id, opts = {}) {
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
       <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="former" aria-pressed="false">Former partners</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
       <div class="field" id="fKidsWrap" hidden><span class="lab" id="fKidsLab">Are they also the parent of…</span><div class="kids" id="fKids"></div></div>
+      ${self ? '' : `<div class="field"><span class="lab">Who are they?</span><div class="seg" id="fWhich"><button type="button" data-v="new" aria-pressed="true">Someone new</button><button type="button" data-v="existing" aria-pressed="false">Already in the tree</button></div></div>
+      <div id="fPickWrap" hidden><div class="field"><label for="fPickQ">Find them</label><input id="fPickQ" placeholder="Type a name, or tap one below" autocomplete="off"></div><div class="pick tall" id="fPickList"></div></div>`}
 ` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
       <input type="hidden" id="fLink" value="">
@@ -1518,6 +1522,41 @@ function openAdd(id, opts = {}) {
     syncRel(rel);
   }
   wireCommon();
+  /* "Already in the tree": tap someone instead of typing them again (2026-11-21, Bo couldn't link Marilyn to the Unknown
+     already there). Likely matches come first: for Parent, the partners of the parent already recorded; for Child,
+     their partners' children; for Partner, the other parents of their children. Unknowns are included. */
+  const picking = () => segVal('fWhich') === 'existing';
+  const likely = () => {
+    const r = segVal('fRel'), kids = childrenOf(p.id), pars = parentsOf(p.id), pts = partnersOf(p.id).map(x => x.id);
+    if (r === 'parent') return pars.flatMap(pp => partnersOf(pp).map(x => x.id)).filter(x => !pars.includes(x));
+    if (r === 'child') return pts.flatMap(pt => childrenOf(pt)).filter(c => !kids.includes(c));
+    if (r === 'partner') return kids.flatMap(c => parentsOf(c)).filter(x => x !== p.id && !pts.includes(x));
+    return pars.flatMap(pp => partnersOf(pp).flatMap(x => childrenOf(x.id))).filter(c => c !== p.id && !pars.every(pp => parentsOf(c).includes(pp)));
+  };
+  const renderPick = () => {
+    const list = $('#fPickList'); if (!list) return;
+    const q = $('#fPickQ').value.toLowerCase().trim(), chosen = $('#fLink').value;
+    const sugg = [...new Set(likely())].filter(x => G.people.has(x) && nameMatches(P(x), q));
+    const rest = [...G.people.values()].filter(x => x.id !== p.id && !sugg.includes(x.id) && (q ? nameMatches(x, q) : !x.placeholder)).slice(0, 40).map(x => x.id);
+    const row = x => `<button type="button" data-id="${esc(x)}" aria-pressed="${x === chosen}">${listName(P(x))}<small>${x === chosen ? 'Chosen' : esc(relation(x) || '')}</small></button>`;
+    list.innerHTML = (sugg.length ? `<span class="picklab">Most likely</span>${sugg.map(row).join('')}` : '') +
+      (rest.length ? `<span class="picklab">${sugg.length ? 'Everyone else' : q ? 'Matches' : 'Everyone'}</span>${rest.map(row).join('')}` : '') ||
+      '<p class="hint">Nobody by that name yet. Choose "Someone new" to add them.</p>';
+    list.querySelectorAll('button').forEach(b => b.onclick = () => { $('#fLink').value = b.dataset.id; formDirty = true; renderPick(); });
+  };
+  const syncWhich = () => {
+    const on = picking();
+    if ($('#fPickWrap')) $('#fPickWrap').hidden = !on;
+    ['#fPersonFields', '#fNameHint'].forEach(s => { const el = $(s); if (el) el.hidden = on; });
+    $('#fLink').value = ''; if ($('#dups')) $('#dups').innerHTML = '';
+    if (on) renderPick();
+  };
+  if (p && !self) {
+    wireSeg('fWhich', syncWhich);
+    $('#fPickQ').addEventListener('input', renderPick);
+    // A different relationship changes who's most likely.
+    document.querySelectorAll('#fRel button').forEach(b => b.addEventListener('click', () => { if (picking()) { $('#fLink').value = ''; renderPick(); } }));
+  }
   if (opts.fields) fillForm(opts.fields);
   watchForm('add', id, { self });
   if (opts.fields) formDirty = true;
@@ -1533,6 +1572,7 @@ function openAdd(id, opts = {}) {
 
   const build = f => {
     const link = $('#fLink').value;
+    if (!link && segVal('fWhich') === 'existing') throw new Error('Tap who they are in the list, or choose "Someone new".');
     const me = link || 'new:1';
     const items = [];
     if (!link) {
@@ -1907,7 +1947,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '7b71020ca4';
+  const BUILD = '3274778104';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

@@ -75,3 +75,9 @@ button:disabled { opacity: .55; cursor: progress; }
 .hint.warn { color: #7A5D1E; background: #FBF6E9; border-radius: 10px; padding: 8px 10px; margin-top: -4px; }
 .noname { display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer; }
 .noname input { width: 20px; height: 20px; accent-color: var(--forest, #1D2B24); }
+
+/* Add form: "Already in the tree" picker (2026-11-21). */
+.pick.tall { max-height: 320px; }
+.pick .picklab { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); margin: 4px 2px 0; }
+.pick button[aria-pressed="true"] { border: 1.5px solid var(--ink); background: #F4F1E8; }
+.pick button[aria-pressed="true"] small { color: var(--ink); font-weight: 500; }
