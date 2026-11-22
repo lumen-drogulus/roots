@@ -54,7 +54,7 @@ main { max-width: 880px; margin: 0 auto; padding: 20px 16px 80px; }
 .change { display: inline-flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .change s { color: var(--bad); }
 .change b { color: #24513A; font-weight: 500; }
-.dupwarn, .livingwarn { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--warn-line); font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dupwarn, .livingwarn, .datewarn { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--warn-line); font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .livingwarn { font-weight: 500; }
 .ibtns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .itemerr { grid-column: 1 / -1; margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); font-size: 13.5px; }
@@ -80,3 +80,9 @@ main { max-width: 880px; margin: 0 auto; padding: 20px 16px 80px; }
 a.btn { text-decoration: none; color: var(--ink); }
 .new { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; background: var(--gilt, #A9822F); color: #fff; border-radius: 6px; padding: 1px 6px; vertical-align: 2px; font-weight: 500; }
 .story { font-family: inherit; font-style: italic; color: var(--ink-soft); margin-top: 4px; }
+
+/* a person's links on the Everyone tab */
+.links { flex-basis: 100%; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.lrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(29, 43, 36, .04); }
+.lrow > span { flex: 1; min-width: 180px; }
+.lrow .confirm { flex-basis: 100%; }

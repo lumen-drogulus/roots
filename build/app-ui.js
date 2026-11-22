@@ -156,6 +156,11 @@ function namesFromPerson(p) {
   return { last: p.last || '', birthName: married.length ? (p.birthSurname || '') : '', otherNames: married.slice(0, -1) };
 }
 const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
+/* A link that shouldn't exist (a mis-tapped "Yes, link them", the wrong parent picked): chosen in Edit, sent as a
+   correction that removes the link once confirmed. Both people stay. */
+const REMOVE = '__remove';
+const linkChange = (target_id, v, source) => v === REMOVE ? { kind: 'suggestion', target_id, field: 'remove', value: 'removed', source }
+  : { kind: 'suggestion', target_id, field: 'subtype', value: v, source };
 /* In the edit form: one row per confirmed parent link, so a parent can be marked step, adoptive or foster later.
    For living people the server shows adoptive and foster links as plain "parent"; that shows here as "Not shown". */
 const PT_KINDS = [['married', 'Married'], ['partner', 'Partners'], ['divorced', 'Divorced'], ['former', 'Former partners'], ['widowed', 'Widowed']];
@@ -163,7 +168,7 @@ const PT_KINDS = [['married', 'Married'], ['partner', 'Partners'], ['divorced', 
 function partnerKindsHTML(id) {
   const rows = partnersOf(id).filter(x => PT_ID.has([id, x.id].sort().join('~')) && !P(x.id).placeholder).map(x => {
     const cur = PT_KINDS.some(([v]) => v === x.sub) ? x.sub : 'married';
-    return `<div class="field"><label for="fPt_${esc(x.id)}">${esc(displayName(P(x.id)))}</label><select id="fPt_${esc(x.id)}" data-partner="${esc(x.id)}" data-was="${esc(x.sub || '')}">${PT_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`;
+    return `<div class="field"><label for="fPt_${esc(x.id)}">${esc(displayName(P(x.id)))}</label><select id="fPt_${esc(x.id)}" data-partner="${esc(x.id)}" data-was="${esc(x.sub || '')}">${PT_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}<option value="${REMOVE}">Never partners: remove this link</option></select></div>`;
   });
   return rows.length ? `<div class="label">Marriages and partners</div><div class="row2">${rows.join('')}</div>` : '';
 }
@@ -172,7 +177,8 @@ function parentKindsHTML(id) {
     const cur = G.pcSub.get(q + '>' + id) || 'biological';
     const known = PC_KINDS.some(([v]) => v === cur);
     const opts = (known ? '' : `<option value="" selected>Keep as is</option>`) +
-      PC_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l} parent</option>`).join('');
+      PC_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l} parent</option>`).join('') +
+      `<option value="${REMOVE}">Not their parent: remove this link</option>`;
     return `<div class="field"><label for="fPk_${esc(q)}">${esc(displayName(P(q)))}</label><select id="fPk_${esc(q)}" data-parent="${esc(q)}" data-was="${known ? cur : ''}">${opts}</select></div>`;
   });
   const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
@@ -338,10 +344,10 @@ function openEdit(id, restore) {
         .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: k === 'married_names' ? JSON.parse(now[k]) : now[k], source: f.source }));
       if (p.placeholder && (f.first || f.last)) changes.push({ kind: 'suggestion', target_id: id, field: 'is_placeholder', value: false, source: f.source });
       document.querySelectorAll('#editForm select[data-parent]').forEach(sel => {
-        if (sel.value && sel.value !== sel.dataset.was) changes.push({ kind: 'suggestion', target_id: PC_ID.get(sel.dataset.parent + '>' + id), field: 'subtype', value: sel.value, source: f.source });
+        if (sel.value && sel.value !== sel.dataset.was) changes.push(linkChange(PC_ID.get(sel.dataset.parent + '>' + id), sel.value, f.source));
       });
       document.querySelectorAll('#editForm select[data-partner]').forEach(sel => {
-        if (sel.value !== sel.dataset.was) changes.push({ kind: 'suggestion', target_id: PT_ID.get([id, sel.dataset.partner].sort().join('~')), field: 'subtype', value: sel.value, source: f.source });
+        if (sel.value !== sel.dataset.was) changes.push(linkChange(PT_ID.get([id, sel.dataset.partner].sort().join('~')), sel.value, f.source));
       });
     } catch (err) { formError(err.message); return; }
     if (!changes.length) { formError("Nothing has changed yet."); return; }
@@ -562,6 +568,8 @@ function openAdd(id, opts = {}) {
     catch (err) { busy(false); formError(err.message); return; }
     busy(false); clearDraft();
     sessionAdded.push(b.name);
+    // if the new person won't be on screen from here, the next reload centers on the card they were added to
+    showAfterSave = { anchor: id, ids: [...Object.values((res && res.ids) || {}), $('#fLink') && $('#fLink').value].filter(Boolean) };
     if (self) { STATE.viewer = (res.ids && res.ids['new:1']) || $('#fLink').value || STATE.viewer; STATE.focus = STATE.viewer; }
     if (more) {
       const keepRel = segVal('fRel');
@@ -591,6 +599,7 @@ async function claimMe(id) {
  * Pages: thank you, send to family, search
  * ===================================================================== */
 let pendingReload = false;
+let showAfterSave = null;
 function showPage(id) { $('#' + id).classList.add('on'); }
 function hidePage(id) { $('#' + id).classList.remove('on'); }
 function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; showPage('thanks'); }

@@ -170,6 +170,7 @@ function rotateAdminKey() {
 
 /** Runs every 10 minutes. Sends one email when new submissions have arrived since the last one. */
 function notifyDigest() {
+  try { dailyBackup_(); } catch (err) { console.error('backup failed: ' + err); }
   var props = PropertiesService.getScriptProperties();
   if (props.getProperty('NOTIFY_PENDING') !== '1') return;
   props.deleteProperty('NOTIFY_PENDING');
@@ -185,6 +186,32 @@ function notifyDigest() {
   MailApp.sendEmail(Session.getEffectiveUser().getEmail(),
     'Roots: ' + total + ' waiting for approval',
     'Waiting for you:\n\n' + lines.join('\n') + '\n\nReview: ' + CONFIG.ADMIN_PAGE_URL + '\n');
+}
+
+/**
+ * Once a day (piggybacking on the 10-minute digest trigger, so nothing new to install): copy every tab into a new
+ * spreadsheet "Roots data backup YYYY-MM-DD" in a "Roots backups" folder beside the Sheet. Values and formatting
+ * only; a copy of the whole file would also copy this script. Keeps the newest 30.
+ */
+function dailyBackup_() {
+  var props = PropertiesService.getScriptProperties();
+  if (Date.now() - Number(props.getProperty('LAST_BACKUP') || 0) < 23 * 3600 * 1000) return;
+  props.setProperty('LAST_BACKUP', String(Date.now()));
+  var src = SpreadsheetApp.getActiveSpreadsheet();
+  var file = DriveApp.getFileById(src.getId());
+  var parents = file.getParents();
+  var home = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  var found = home.getFoldersByName('Roots backups');
+  var folder = found.hasNext() ? found.next() : home.createFolder('Roots backups');
+  var copy = SpreadsheetApp.create('Roots data backup ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'));
+  src.getSheets().forEach(function (sh) { sh.copyTo(copy).setName(sh.getName()); });
+  copy.deleteSheet(copy.getSheets()[0]);   // the blank sheet a new spreadsheet starts with
+  DriveApp.getFileById(copy.getId()).moveTo(folder);
+  var all = [];
+  var it = folder.getFiles();
+  while (it.hasNext()) all.push(it.next());
+  all.sort(function (a, b) { return b.getDateCreated() - a.getDateCreated(); });
+  all.slice(30).forEach(function (f) { f.setTrashed(true); });
 }
 
 /* =========================================================================
@@ -630,6 +657,19 @@ function validateItem_(ctx, item, i) {
     if (target && target.status === 'merged') target = resolvePerson_(db, target.id);
     if (!target || target.status !== 'approved') throw userError_(where + 'can only suggest changes to someone already in the tree.');
     var fields = db.People.get(target.id) ? PERSON_FIELDS : RELATIONSHIP_FIELDS;
+    // "This link is wrong": a correction that, once confirmed, takes the link off the tree. Both people stay.
+    if (item.field === 'remove') {
+      if (fields !== RELATIONSHIP_FIELDS) throw userError_(where + 'only a link can be removed this way.');
+      var rmsource = cleanText_(item.source, CONFIG.MAX_TEXT);
+      return {
+        write: function (status) {
+          var row = db.Suggestions.insert(stamp_(ctx, { status: 'pending', target_id: target.id, field: 'remove',
+            proposed_value: JSON.stringify('removed'), source: rmsource }));
+          if (status === 'approved') applySuggestion_(db, row, ctx.now);
+          return row;
+        }
+      };
+    }
     if (!fields[item.field]) throw userError_(where + 'that detail cannot be changed.');
     var one = {};
     one[item.field] = item.value;
@@ -882,6 +922,13 @@ function adminTree_(db) {
   return out;
 }
 
+// A link in words, for the approval queue: "Kayla Vorhees is the parent of Jonathon Ruzicka".
+function relLabel_(db, r) {
+  if (!r) return 'a link that no longer exists';
+  return r.type === 'partner' ? personLabel_(db, r.person_a) + ' and ' + personLabel_(db, r.person_b) + ' as partners'
+    : personLabel_(db, r.person_a) + ' as the parent of ' + personLabel_(db, r.person_b);
+}
+
 function personLabel_(db, id) {
   var p = db.People.get(id);
   if (!p) return '(missing ' + id + ')';
@@ -917,7 +964,7 @@ function adminQueue_(db) {
   db.Suggestions.rows.forEach(function (s) {
     if (s.status !== 'pending') return;
     var t = db.People.get(s.target_id) || db.Relationships.get(s.target_id);
-    add('suggestion', s, { target_label: db.People.get(s.target_id) ? personLabel_(db, s.target_id) : 'relationship ' + s.target_id,
+    add('suggestion', s, { target_label: db.People.get(s.target_id) ? personLabel_(db, s.target_id) : relLabel_(db, t),
       current_value: t ? parseJsonValue_(JSON.stringify(t[s.field])) : '', proposed: parseJsonValue_(s.proposed_value) });
   });
   db.Photos.rows.forEach(function (f) {
@@ -1056,6 +1103,14 @@ function applySuggestion_(db, s, now) {
   var target = db.People.get(s.target_id) ? resolvePerson_(db, s.target_id) : db.Relationships.get(s.target_id);
   var table = db.People.get(s.target_id) ? db.People : db.Relationships;
   if (!target) throw userError_('the person or link it changes no longer exists');
+  if (s.field === 'remove') {
+    // the link leaves the public tree like a taken-back approval; the suggestion keeps what it was
+    db.Suggestions.set(s, 'previous_value', JSON.stringify(target.status));
+    db.Suggestions.set(s, 'status', 'approved');
+    db.Suggestions.set(s, 'reviewed_at', now);
+    if (target.status === 'approved') { table.set(target, 'status', 'rejected'); table.set(target, 'reviewed_at', now); }
+    return;
+  }
   db.Suggestions.set(s, 'previous_value', JSON.stringify(target[s.field] === undefined ? '' : target[s.field]));
   db.Suggestions.set(s, 'status', 'approved');
   db.Suggestions.set(s, 'reviewed_at', now);

@@ -265,6 +265,12 @@ function layout() {
   }
 
   /* ---- ancestors: a pedigree that grows away from the centered person ---- */
+  function withPartners(s, side) {
+    if (!isOpen('fam:' + s)) return [{ id: s }];
+    const sd = splitSides(s, partnersOf(s).filter(pt => !lineSet.has(pt.id)));
+    const inner = side === 'left' ? sd.right : sd.left, outer = side === 'left' ? sd.left : sd.right;
+    return [...[...inner].reverse().map(pt => ({ id: pt, partnerOf: s, inner: true })), { id: s, coupleGap: inner.length > 0 }, ...outer.map(pt => ({ id: pt, partnerOf: s }))];
+  }
   function pedExtents(id, depth, side) {
     const t = { id, depth, side, parents: [], extras: [], bud: null };
     const opened = depth < MAX_UP || isOpen('up:' + id);
@@ -277,11 +283,11 @@ function layout() {
       const sibs = siblingsOf(id).map(s => s.id);
       const others = partnersOf(id).filter(pt => !childrenOf(id).some(c => parentsOf(c).includes(pt.id) && isOnLine(c))).map(pt => pt.id);
       const sibExtras = [];
-      if (sibs.length) { if (isOpen('sib:' + id)) sibExtras.push(...sibs.map(s => ({ id: s }))); else sibExtras.push({ bud: { key: 'sib:' + id, label: sibs.length === 1 ? '1 sibling' : sibs.length + ' siblings', count: '' } }); }
+      if (sibs.length) { if (isOpen('sib:' + id)) sibExtras.push(...sibs.flatMap(s => withPartners(s, side))); else sibExtras.push({ bud: { key: 'sib:' + id, label: sibs.length === 1 ? '1 sibling' : sibs.length + ' siblings', count: '' } }); }
       if (others.length) { if (depth === 1 || isOpen('op:' + id)) t.extras.push(...others.map(s => ({ id: s, partnerOf: id }))); else t.extras.push({ bud: { key: 'op:' + id, label: others.length === 1 ? 'Another marriage' : others.length + ' marriages', count: '' } }); }
       t.extras.push(...sibExtras);
     }
-    const extraW = t.extras.reduce((s, e) => s + (e.bud ? BUDW : CW) + GAP, 0);
+    const extraW = t.extras.reduce((s, e) => s + (e.bud ? BUDW : CW) + GAP + ((e.partnerOf && !e.inner) || e.coupleGap ? CG - GAP : 0), 0);
     const half = (id === F ? FW : CW) / 2;
     t.selfL = half + (side === 'left' ? extraW : 0);
     t.selfR = half + (side !== 'left' ? extraW : 0);
@@ -301,14 +307,14 @@ function layout() {
     let off = (t.id === F ? FW : CW) / 2 + GAP;
     for (const e of t.extras) {
       const w = e.bud ? BUDW : CW;
-      if (e.partnerOf) off += CG - GAP;
+      if ((e.partnerOf && !e.inner) || e.coupleGap) off += CG - GAP;
       const ex = t.side === 'left' ? x - off - w / 2 : x + off + w / 2;
       if (e.bud) addBud(e.bud.key, e.bud.label, e.bud.count, ex, g, t.id);
       else addNode(e.id, ex, g, { extraOf: t.id, partnerOf: e.partnerOf });
       off += w + GAP;
     }
     if (t.bud) addBud(t.bud.key, t.bud.label, t.bud.count, x, g + 1, t.id);
-    if (t.parents.length === 2) { pedPlace(t.parents[0], x - t.da, g + 1); pedPlace(t.parents[1], x + t.db, g + 1); }
+    if (t.parents.length === 2) { occupy(g + 1, x - t.da, x + t.db); pedPlace(t.parents[0], x - t.da, g + 1); pedPlace(t.parents[1], x + t.db, g + 1); }
     else if (t.parents.length === 1) pedPlace(t.parents[0], x, g + 1);
   }
   const ped = pedExtents(F, 0, 'right');
@@ -316,56 +322,77 @@ function layout() {
   pedPlace(ped, 0, 0);
   for (const n of nodes.values()) { const [a, b] = nodeSpan(n); occupy(n.g, a, b); }
 
-  /* ---- the centered person's row: former partners left, current partners right ---- */
-  const prts = partnersOf(F).filter(pt => !nodes.has(pt.id));
-  const current = prts.filter(pt => !isFormer(pt.sub)), former = prts.filter(pt => isFormer(pt.sub));
+  /* ---- partners beside a person: current right, former left, one each side before either doubles up ---- */
+  function splitSides(id, pts) {
+    const n = pid => childrenOf(id).filter(c => parentsOf(c).includes(pid)).length;
+    const byKids = a => [...a].sort((x, y) => n(y.id) - n(x.id)).map(x => x.id);
+    const right = byKids(pts.filter(pt => !isFormer(pt.sub))), left = byKids(pts.filter(pt => isFormer(pt.sub)));
+    if (right.length > 1 && !left.length) left.push(right.pop());
+    else if (left.length > 1 && !right.length) right.push(left.pop());
+    return { left, right };
+  }
+
+  /* ---- the centered person's row ---- */
+  const sidesF = splitSides(F, partnersOf(F).filter(pt => !nodes.has(pt.id)));
+  const current = sidesF.right.map(id => ({ id })), former = sidesF.left.map(id => ({ id }));
   let rx = FW / 2 + CG, lx = -(FW / 2 + CG);
   const sideOf = {};
-  current.forEach(pt => { addNode(pt.id, rx + CW / 2, 0, { partnerOf: F }); occupy(0, rx, rx + CW); sideOf[pt.id] = 1; rx += CW + CG; });
-  former.forEach(pt => { addNode(pt.id, lx - CW / 2, 0, { partnerOf: F }); occupy(0, lx - CW, lx); sideOf[pt.id] = -1; lx -= CW + CG; });
+  sidesF.right.forEach(pid => { addNode(pid, rx + CW / 2, 0, { partnerOf: F }); occupy(0, rx, rx + CW); sideOf[pid] = 1; rx += CW + CG; });
+  sidesF.left.forEach(pid => { addNode(pid, lx - CW / 2, 0, { partnerOf: F }); occupy(0, lx - CW, lx); sideOf[pid] = -1; lx -= CW + CG; });
 
-  /* ---- descendants, grouped by co-parent, under each couple ---- */
+  /* ---- descendants: each couple's children under that couple ---- */
+  // A unit is measured from its person's x: L and R are how far it reaches left and right, every generation included.
   function descUnit(id, depth) {
-    const u = { id, prt: [], kids: [], bud: null };
-    if (depth > 0) partnersOf(id).forEach(pt => u.prt.push(pt.id));
-    const kids = childrenOf(id).filter(c => !parentsOf(c).some(pp => pp !== id && !u.prt.includes(pp) && depth > 0 && false));
-    if (kids.length && (depth < MAX_DOWN || isOpen('down:' + id))) u.kids = kids.map(k => descUnit(k, depth + 1));
-    else if (kids.length) u.bud = { key: 'down:' + id, label: kids.length === 1 ? '1 child' : kids.length + ' children' };
-    const selfW = CW + u.prt.length * (CW + CG);
-    const kidsW = u.kids.reduce((s, k) => s + k.w, 0) + Math.max(0, u.kids.length - 1) * GAP;
-    u.w = Math.max(selfW, kidsW, u.bud ? BUDW : 0);
+    const u = { id, cards: [], groups: [], bud: null };
+    const s = splitSides(id, partnersOf(id));
+    s.right.forEach((pid, i) => u.cards.push({ id: pid, dx: (i + 1) * (CW + CG) }));
+    s.left.forEach((pid, i) => u.cards.push({ id: pid, dx: -(i + 1) * (CW + CG) }));
+    const midOf = pid => { const c = u.cards.find(c => c.id === pid); return c ? c.dx / 2 : 0; };
+    let L = CW / 2 + s.left.length * (CW + CG), R = CW / 2 + s.right.length * (CW + CG);
+    const kids = childrenOf(id);
+    if (kids.length && (depth < MAX_DOWN || isOpen('down:' + id))) {
+      const byOther = new Map();
+      kids.forEach(k => { const o = parentsOf(k).find(pp => pp !== id && u.cards.some(c => c.id === pp)) || ''; if (!byOther.has(o)) byOther.set(o, []); byOther.get(o).push(k); });
+      const order = [...[...s.left].reverse(), '', ...s.right].filter(o => byOther.has(o));
+      let prev = -Infinity;
+      const gs = order.map(o => {
+        const units = byOther.get(o).map(k => descUnit(k, depth + 1));
+        const gw = units.reduce((t, k) => t + k.L + k.R, 0) + (units.length - 1) * GAP;
+        const want = midOf(o) - gw / 2, left = Math.max(want, prev + GAP);
+        prev = left + gw;
+        return { units, gw, want, left };
+      });
+      // groups pushed apart drift right; spread the drift so the whole family stays centered under its couples
+      const drift = gs.reduce((t, g) => t + g.left - g.want, 0) / gs.length;
+      for (const g of gs) {
+        let cur = g.left - drift;
+        L = Math.max(L, -cur); R = Math.max(R, cur + g.gw);
+        for (const k of g.units) { u.groups.push({ unit: k, dx: cur + k.L }); cur += k.L + k.R + GAP; }
+      }
+    } else if (kids.length) {
+      const near = s.right[0] || s.left[0];
+      u.bud = { key: 'down:' + id, label: kids.length === 1 ? '1 child' : kids.length + ' children', dx: near ? midOf(near) : 0 };
+      L = Math.max(L, BUDW / 2 - u.bud.dx); R = Math.max(R, u.bud.dx + BUDW / 2);
+    }
+    u.L = L; u.R = R;
     return u;
   }
   function descPlace(u, x, g, block) {
-    // the person sits left within the unit when they have a partner, so the couple is centered
-    const selfW = CW + u.prt.length * (CW + CG);
-    let px = x - selfW / 2 + CW / 2;
-    block.push({ id: u.id, x: px, y: genY(g), g, kind: 'person' });
-    const formerP = u.prt.filter(pid => isFormer((partnersOf(u.id).find(x => x.id === pid) || {}).sub));
-    const currentP = u.prt.filter(pid => !formerP.includes(pid));
-    px += formerP.length * (CW + CG);
-    block[block.length - 1].x = px;
-    let ox = px;
-    currentP.forEach(pid => { ox += CW + CG; block.push({ id: pid, x: ox, y: genY(g), g, kind: 'person', partnerOf: u.id }); });
-    ox = px;
-    formerP.forEach(pid => { ox -= CW + CG; block.push({ id: pid, x: ox, y: genY(g), g, kind: 'person', partnerOf: u.id }); });
-    const mid = currentP.length ? px + (CW + CG) / 2 : formerP.length ? px - (CW + CG) / 2 : px;
-    if (u.bud) block.push({ id: 'bud:' + u.bud.key, key: u.bud.key, x: mid, y: genY(g - 1), g: g - 1, kind: 'bud', label: u.bud.label, anchor: u.id });
-    const kidsW = u.kids.reduce((s, k) => s + k.w, 0) + Math.max(0, u.kids.length - 1) * GAP;
-    let kx = mid - kidsW / 2;
-    u.kids.forEach(k => { descPlace(k, kx + k.w / 2, g - 1, block); kx += k.w + GAP; });
+    block.push({ id: u.id, x, y: genY(g), g, kind: 'person' });
+    u.cards.forEach(c => block.push({ id: c.id, x: x + c.dx, y: genY(g), g, kind: 'person', partnerOf: u.id }));
+    if (u.bud) block.push({ id: 'bud:' + u.bud.key, key: u.bud.key, x: x + u.bud.dx, y: genY(g - 1), g: g - 1, kind: 'bud', label: u.bud.label, anchor: u.id });
+    u.groups.forEach(k => descPlace(k.unit, x + k.dx, g - 1, block));
   }
   const groups = new Map();
   childrenOf(F).forEach(c => { const other = parentsOf(c).find(pp => pp !== F) || ''; if (!groups.has(other)) groups.set(other, []); groups.get(other).push(c); });
   const orderedGroups = [...groups.entries()].sort((a, b) => (sideOf[a[0]] || 0) - (sideOf[b[0]] || 0));
   for (const [other, kids] of orderedGroups) {
-    const ox = nodes.has(other) ? nodes.get(other).x : 0;
-    const mid = other && nodes.has(other) ? (ox + 0) / 2 : 0;
+    const mid = other && nodes.has(other) && sideOf[other] ? nodes.get(other).x / 2 : 0;
     const units = kids.map(k => descUnit(k, 1));
-    const total = units.reduce((s, u) => s + u.w, 0) + (units.length - 1) * GAP;
+    const total = units.reduce((s, u) => s + u.L + u.R, 0) + (units.length - 1) * GAP;
     const block = [];
     let kx = mid - total / 2;
-    units.forEach(u => { descPlace(u, kx + u.w / 2, -1, block); kx += u.w + GAP; });
+    units.forEach(u => { descPlace(u, kx + u.L, -1, block); kx += u.L + u.R + GAP; });
     placeBlock(block, (sideOf[other] || 1));
   }
 
@@ -384,12 +411,11 @@ function layout() {
     const fam = partnersOf(s.id).length + childrenOf(s.id).length;
     if (fam) {
       if (isOpen('fam:' + s.id)) {
-        let ox = cx;
-        partnersOf(s.id).forEach(pt => { ox += dir * (CW + CG); block.push({ id: pt.id, x: ox, y: 0, g: 0, kind: 'person', partnerOf: s.id }); });
-        const mid = partnersOf(s.id).length ? cx + dir * (CW + CG) / 2 : cx;
-        const ks = childrenOf(s.id);
-        let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
-        ks.forEach(k => { block.push({ id: k, x: kx + CW / 2, y: genY(-1), g: -1, kind: 'person' }); kx += CW + GAP; });
+        // the same couples layout as descendants: partners beside the sibling, each couple's children under it
+        const u = descUnit(s.id, 1);
+        block.length = 0;
+        descPlace(u, dir < 0 ? (lx - u.R) : (rx + u.L), 0, block);
+        Object.assign(block[0], { sibling: true, half: s.half });
       } else {
         block.push({ id: 'bud:fam:' + s.id, key: 'fam:' + s.id, x: cx, y: -(STATE.rootsBelow ? 1 : -1) * (CH / 2 + 26), g: -0.5, kind: 'bud', label: (P(s.id).first || '') + "'s family", count: fam, anchor: s.id });
       }
@@ -425,11 +451,15 @@ function layout() {
       placeBlock([{ id: 'bud:' + key, key, x: n.x, y: n.y + down * (CH / 2 + 26), g: n.g - 0.5, kind: 'bud', label: (P(s).first || 'Their') + "'s family", count: pts.length + ks.length, anchor: s }], dir);
       continue;
     }
-    // Partners first, beside the aunt or uncle; then the cousins under the couple, each block clearing what's already there.
-    let ox = n.x, mid = n.x;
-    pts.forEach((pt, i) => { ox += dir * (CW + CG); const b = [{ id: pt, x: ox, y: n.y, g: n.g, kind: 'person', partnerOf: s }]; placeBlock(b, dir); ox = b[0].x; if (!i) mid = (n.x + ox) / 2; });
-    let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
-    if (ks.length) placeBlock(ks.map(k => { const c = { id: k, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return c; }), dir);
+    // Their partners already sit beside them in the row (see withPartners); each couple's children go under that couple.
+    const prt = partnersOf(s).map(x => x.id).filter(x => nodes.has(x) && nodes.get(x).partnerOf === s);
+    const byOther = new Map();
+    ks.forEach(k => { const o = parentsOf(k).find(pp => prt.includes(pp)) || ''; if (!byOther.has(o)) byOther.set(o, []); byOther.get(o).push(k); });
+    for (const [o, kids] of byOther) {
+      const mid = o ? (n.x + nodes.get(o).x) / 2 : n.x;
+      let kx = mid - (kids.length * CW + (kids.length - 1) * GAP) / 2;
+      placeBlock(kids.map(k => { const c = { id: k, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return c; }), dir);
+    }
   }
 
   /* ---- married-in families (partners of the centered person and of their children) ---- */
@@ -480,6 +510,16 @@ function layout() {
       if (m.g !== n.g) continue;
       edges.push({ id: 'pt:' + k, kind: 'partner', a: n.id, b: pt.id, sub: pt.sub });
     }
+  }
+  // close family that no bud on this screen would reveal: shown as "+N", tap to center there.
+  // "Reveal" is everyone drawn with every bud open (one extra layout pass, about a millisecond).
+  let reveal = placed;
+  if (!STATE.all) { STATE.all = true; try { reveal = new Set(layout().nodes.keys()); } finally { STATE.all = false; } }
+  for (const n of nodes.values()) {
+    if (n.kind !== 'person' || n.id === F || P(n.id).placeholder) continue;
+    const fam = [...parentsOf(n.id), ...childrenOf(n.id), ...partnersOf(n.id).map(x => x.id), ...siblingsOf(n.id).map(x => x.id)];
+    const hidden = new Set(fam.filter(x => !reveal.has(x) && !P(x).placeholder));
+    if (hidden.size) n.more = hidden.size;
   }
   // which opened groups hang from which card, so each can be folded again
   if (!STATE.all) for (const key of STATE.open) {
@@ -551,7 +591,19 @@ function updateNodeEl(rec, n) {
     el.className = 'card' + (n.id === STATE.focus ? ' focus' : '') + (p.placeholder ? ' placeholder' : '') + (p.pending ? ' pending' : '') + (!isLiving(p) && !p.placeholder ? ' deceased' : '') + (STATE.selected === n.id ? ' selected' : '');
     el.innerHTML = cardHTML(n);
     el.setAttribute('aria-label', displayName(p) + ', ' + relation(n.id));
-    rec.el.querySelectorAll('.fold').forEach(f => f.remove());
+    rec.el.querySelectorAll('.fold, .more').forEach(f => f.remove());
+    if (n.more) {
+      const m = document.createElement('button');
+      m.className = 'more';
+      m.style.top = ((n.id === STATE.focus ? FH : CH) / 2 - 12) + 'px';
+      m.style.left = ((n.id === STATE.focus ? FW : CW) / 2 - 30) + 'px';
+      m.textContent = '+' + n.more;
+      const who = P(n.id).first || 'them';
+      m.title = `${n.more} more ${n.more === 1 ? 'relative' : 'relatives'}. Tap to center on ${who}.`;
+      m.setAttribute('aria-label', m.title);
+      m.addEventListener('click', e => { e.stopPropagation(); closePanel(); STATE.focus = n.id; render(); });
+      rec.el.appendChild(m);
+    }
     (n.folds || []).forEach((key, i) => {
       const f = document.createElement('button');
       f.className = 'fold';
@@ -947,6 +999,11 @@ function namesFromPerson(p) {
   return { last: p.last || '', birthName: married.length ? (p.birthSurname || '') : '', otherNames: married.slice(0, -1) };
 }
 const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
+/* A link that shouldn't exist (a mis-tapped "Yes, link them", the wrong parent picked): chosen in Edit, sent as a
+   correction that removes the link once confirmed. Both people stay. */
+const REMOVE = '__remove';
+const linkChange = (target_id, v, source) => v === REMOVE ? { kind: 'suggestion', target_id, field: 'remove', value: 'removed', source }
+  : { kind: 'suggestion', target_id, field: 'subtype', value: v, source };
 /* In the edit form: one row per confirmed parent link, so a parent can be marked step, adoptive or foster later.
    For living people the server shows adoptive and foster links as plain "parent"; that shows here as "Not shown". */
 const PT_KINDS = [['married', 'Married'], ['partner', 'Partners'], ['divorced', 'Divorced'], ['former', 'Former partners'], ['widowed', 'Widowed']];
@@ -954,7 +1011,7 @@ const PT_KINDS = [['married', 'Married'], ['partner', 'Partners'], ['divorced', 
 function partnerKindsHTML(id) {
   const rows = partnersOf(id).filter(x => PT_ID.has([id, x.id].sort().join('~')) && !P(x.id).placeholder).map(x => {
     const cur = PT_KINDS.some(([v]) => v === x.sub) ? x.sub : 'married';
-    return `<div class="field"><label for="fPt_${esc(x.id)}">${esc(displayName(P(x.id)))}</label><select id="fPt_${esc(x.id)}" data-partner="${esc(x.id)}" data-was="${esc(x.sub || '')}">${PT_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`;
+    return `<div class="field"><label for="fPt_${esc(x.id)}">${esc(displayName(P(x.id)))}</label><select id="fPt_${esc(x.id)}" data-partner="${esc(x.id)}" data-was="${esc(x.sub || '')}">${PT_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}<option value="${REMOVE}">Never partners: remove this link</option></select></div>`;
   });
   return rows.length ? `<div class="label">Marriages and partners</div><div class="row2">${rows.join('')}</div>` : '';
 }
@@ -963,7 +1020,8 @@ function parentKindsHTML(id) {
     const cur = G.pcSub.get(q + '>' + id) || 'biological';
     const known = PC_KINDS.some(([v]) => v === cur);
     const opts = (known ? '' : `<option value="" selected>Keep as is</option>`) +
-      PC_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l} parent</option>`).join('');
+      PC_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l} parent</option>`).join('') +
+      `<option value="${REMOVE}">Not their parent: remove this link</option>`;
     return `<div class="field"><label for="fPk_${esc(q)}">${esc(displayName(P(q)))}</label><select id="fPk_${esc(q)}" data-parent="${esc(q)}" data-was="${known ? cur : ''}">${opts}</select></div>`;
   });
   const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
@@ -1129,10 +1187,10 @@ function openEdit(id, restore) {
         .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: k === 'married_names' ? JSON.parse(now[k]) : now[k], source: f.source }));
       if (p.placeholder && (f.first || f.last)) changes.push({ kind: 'suggestion', target_id: id, field: 'is_placeholder', value: false, source: f.source });
       document.querySelectorAll('#editForm select[data-parent]').forEach(sel => {
-        if (sel.value && sel.value !== sel.dataset.was) changes.push({ kind: 'suggestion', target_id: PC_ID.get(sel.dataset.parent + '>' + id), field: 'subtype', value: sel.value, source: f.source });
+        if (sel.value && sel.value !== sel.dataset.was) changes.push(linkChange(PC_ID.get(sel.dataset.parent + '>' + id), sel.value, f.source));
       });
       document.querySelectorAll('#editForm select[data-partner]').forEach(sel => {
-        if (sel.value !== sel.dataset.was) changes.push({ kind: 'suggestion', target_id: PT_ID.get([id, sel.dataset.partner].sort().join('~')), field: 'subtype', value: sel.value, source: f.source });
+        if (sel.value !== sel.dataset.was) changes.push(linkChange(PT_ID.get([id, sel.dataset.partner].sort().join('~')), sel.value, f.source));
       });
     } catch (err) { formError(err.message); return; }
     if (!changes.length) { formError("Nothing has changed yet."); return; }
@@ -1353,6 +1411,8 @@ function openAdd(id, opts = {}) {
     catch (err) { busy(false); formError(err.message); return; }
     busy(false); clearDraft();
     sessionAdded.push(b.name);
+    // if the new person won't be on screen from here, the next reload centers on the card they were added to
+    showAfterSave = { anchor: id, ids: [...Object.values((res && res.ids) || {}), $('#fLink') && $('#fLink').value].filter(Boolean) };
     if (self) { STATE.viewer = (res.ids && res.ids['new:1']) || $('#fLink').value || STATE.viewer; STATE.focus = STATE.viewer; }
     if (more) {
       const keepRel = segVal('fRel');
@@ -1382,6 +1442,7 @@ async function claimMe(id) {
  * Pages: thank you, send to family, search
  * ===================================================================== */
 let pendingReload = false;
+let showAfterSave = null;
 function showPage(id) { $('#' + id).classList.add('on'); }
 function hidePage(id) { $('#' + id).classList.remove('on'); }
 function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; showPage('thanks'); }
@@ -1459,6 +1520,7 @@ function openKey() {
       ${row(keyCard({ fill: '#FFF9EC', stroke: '#A9822F', dash: '4 3', tag: true }), 'Unconfirmed', 'Something you added. Only you see it until Jonny Ruzicka confirms it.')}
       ${row(keyCard({ fill: 'rgba(255,255,255,.3)', stroke: '#1D2B24', dash: '3 3', av: 'none', avDash: true }), 'Unknown person', 'We know someone was here but not their name. Tap to fill it in.')}
       ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="4" y="5" width="84" height="24" rx="12" fill="#FBF6E9" stroke="#A9822F" stroke-opacity=".55"/><path d="M18 24v-6M18 18c-3 0-4.5-2-4.5-5 3 0 4.5 2 4.5 5zM18 18c3 0 4.5-2 4.5-5-3 0-4.5 2-4.5 5z" fill="none" stroke="#A9822F" stroke-width="1.4" stroke-linecap="round"/><rect x="28" y="15" width="44" height="4" rx="2" fill="#1D2B24" fill-opacity=".7"/></svg>`, 'A folded branch', 'More relatives live here. Tap the bud to open it; tap the small minus on the card to fold it again.')}
+      ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="8" y="4" width="70" height="26" rx="6" fill="#FFFDF9" stroke="#1D2B24" stroke-opacity=".12"/><rect x="58" y="20" width="28" height="14" rx="7" fill="#1D2B24"/><text x="72" y="30.5" text-anchor="middle" font-size="9" font-family="Jost, sans-serif" font-weight="600" fill="#FFFDF9">+3</text></svg>`, 'More family off the tree', 'This person has relatives who aren\'t on screen from here. Tap the number to center the tree on them.')}
       ${row(`<svg viewBox="0 0 92 34" aria-hidden="true"><rect x="16" y="9" width="60" height="16" rx="8" fill="#FFFDF9" stroke="#1D2B24" stroke-opacity=".2"/><g transform="translate(29 17) scale(.5)"><circle r="9" cx="-6" fill="none" stroke="#A9822F" stroke-width="3"/><circle r="9" cx="6" fill="none" stroke="#A9822F" stroke-width="3"/></g><rect x="40" y="15" width="26" height="4" rx="2" fill="#4A564F"/></svg>`, 'Related twice', 'Two people who married and also share an ancestor, like second cousins.')}
       <h3>Lines</h3>
       ${row(keyLine('M46 3 C46 16 46 18 46 31'), 'Parent to child', STATE.rootsBelow ? 'Ink branches above the ground line lead to children and grandchildren.' : 'Ink lines lead down to children and grandchildren.')}
@@ -1495,7 +1557,7 @@ const INTRO = [
     <h1>How it works</h1>
     <ul class="howto">
       <li><span class="ic">${ICON.bud.replace('currentColor', '#A9822F')}</span><div><b>Tap anyone to see their story.</b><span>Names, dates and memories for those who've passed. Living relatives show by name only.</span></div></li>
-      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it, or use Show all.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it. A small +3 on a card means more family there: tap it to center the tree on them.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><b>Add who you know.</b><span>Especially the relatives we've lost. A first name is enough to start. ${OWNER_NAME} confirms each addition.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></span><div><b>Not sure what a line means?</b><span>Tap Key at the top for every symbol and line type.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
@@ -1593,7 +1655,18 @@ async function reload(opts = {}) {
   if (!G.people.size) { clearTree(); if (!$('#intro').classList.contains('on')) showEmpty(); return; }
   $('#empty').hidden = true;
   const nothingShown = !live.size;   // first paint, or first person after an empty tree
-  render({ camera: firstTime || nothingShown || opts.camera ? 'instant' : false, grow: true });
+  // Just saved someone who has no place on screen from here: center on the person they were added to,
+  // whose close family always draws, so the new person never seems to vanish.
+  let moved = false;
+  if (showAfterSave) {
+    const { anchor, ids } = showAfterSave; showAfterSave = null;
+    const added = ids.filter(x => G.people.has(x));
+    if (added.length && G.people.has(anchor) && STATE.focus !== anchor && G.people.has(STATE.focus)) {
+      const L = layout();
+      if (added.some(x => !L.nodes.has(x))) { STATE.focus = anchor; moved = true; }
+    }
+  }
+  render({ camera: firstTime || nothingShown || opts.camera ? 'instant' : moved ? undefined : false, grow: true });
 }
 function showLoadError(msg) {
   const el = $('#loading');
@@ -1632,3 +1705,32 @@ function offerResume() {
   $('#resumeNo').onclick = () => { clearDraft(); $('#resume').hidden = true; };
   $('#resumeYes').onclick = () => { $('#resume').hidden = true; d.kind === 'edit' ? openEdit(d.anchor, d) : openAdd(d.anchor, { rel: d.rel, fields: d.fields, self: d.self }); };
 }
+
+window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || saving;
+
+/* ---- Stay current. GitHub Pages lets browsers keep every file for about 10 minutes, so right after a deploy a
+ * phone can run yesterday's page. On load (and when the page comes back to the front) ask for version.json, which
+ * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
+ * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
+(function () {
+  const BUILD = '7fb3b1c966';
+  let last = 0;
+  async function check() {
+    if (Date.now() - last < 60000) return;
+    last = Date.now();
+    let v;
+    try { v = (await (await fetch('version.json', { cache: 'no-store' })).json()).v; } catch (e) { return; }
+    if (!v || v === BUILD) return;
+    if (typeof window.ROOTS_BUSY === 'function' && window.ROOTS_BUSY()) { last = 0; return; }
+    let tried = null; try { tried = sessionStorage.getItem('roots_fresh'); } catch (e) {}
+    if (tried === v) return;
+    try { sessionStorage.setItem('roots_fresh', v); } catch (e) {}
+    const files = [...document.querySelectorAll('script[src], link[rel="stylesheet"][href]')]
+      .map(el => el.src || el.href).filter(u => u.startsWith(location.origin));
+    await Promise.all([location.href, ...files].map(u => fetch(u, { cache: 'reload' }).catch(() => {})));
+    location.reload();
+  }
+  window.ROOTS_CHECK_VERSION = () => { last = 0; return check(); };
+  check();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+})();

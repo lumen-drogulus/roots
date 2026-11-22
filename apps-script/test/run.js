@@ -398,6 +398,54 @@ test('email digest: one email for a burst, none when quiet', () => {
   assert.ok(/2 waiting/.test(t.mails[0].subject));
 });
 
+test('a relative can report a wrong link; approving takes it off the tree, both people stay', () => {
+  const { t, key, ids } = setup();
+  const link = t.post({ action: 'admin_tree', key }).Relationships.find(r => r.person_a === ids['new:gpa'] && r.person_b === ids['new:mom']);
+  const r = t.post({ action: 'submit', token: TOK_LINDA, display_name: 'Linda', items: [{ kind: 'suggestion', target_id: link.id, field: 'remove', value: 'removed', source: 'Josef was her uncle' }] });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  const q = t.post({ action: 'admin_queue', key });
+  const item = q.batches.flatMap(b => b.items).find(i => i.kind === 'suggestion');
+  assert.strictEqual(item.row.field, 'remove');
+  assert.ok(/Josef.*as the parent of.*Carol/.test(item.target_label), item.target_label);
+  let pub = t.get({});
+  assert.ok(pub.relationships.some(x => x.a === ids['new:gpa'] && x.b === ids['new:mom']), 'still public while pending');
+  const a = t.post({ action: 'admin_approve', key, items: [{ kind: 'suggestion', id: item.row.id }] });
+  assert.deepStrictEqual(a.errors, []);
+  pub = t.get({});
+  assert.ok(!pub.relationships.some(x => x.a === ids['new:gpa'] && x.b === ids['new:mom']), 'link gone once approved');
+  assert.ok(pub.people.some(p => p.id === ids['new:gpa']) && pub.people.some(p => p.id === ids['new:mom']), 'both people stay');
+  const row = t.post({ action: 'admin_tree', key }).Suggestions.find(s => s.id === item.row.id);
+  assert.strictEqual(JSON.parse(row.previous_value), 'approved');
+});
+
+test('the owner removing a link applies at once; a person cannot be "removed" this way', () => {
+  const { t, key, ids } = setup();
+  const link = t.post({ action: 'admin_tree', key }).Relationships.find(r => r.person_a === ids['new:me'] && r.person_b === ids['new:kid']);
+  const r = t.post({ action: 'submit', key, token: TOK_JONNY, items: [{ kind: 'suggestion', target_id: link.id, field: 'remove', value: 'removed' }] });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.ok(!t.get({}).relationships.some(x => x.a === ids['new:me'] && x.b === ids['new:kid']));
+  const bad = t.post({ action: 'submit', token: TOK_LINDA, items: [{ kind: 'suggestion', target_id: ids['new:kid'], field: 'remove', value: 'removed' }] });
+  assert.strictEqual(bad.ok, false);
+  assert.ok(/only a link/.test(bad.error), bad.error);
+});
+
+test('daily backup: one copy a day of every tab, in a backups folder, newest 30 kept', () => {
+  const { t } = setup();
+  t.run('notifyDigest');
+  const folders = Object.values(t.drive.folders).filter(f => f.name === 'Roots backups');
+  assert.strictEqual(folders.length, 1);
+  assert.strictEqual(folders[0].parent, 'rootsFolder', 'beside the Sheet');
+  const copies = () => Object.values(t.drive.files).filter(f => f.parent === folders[0].id && !f.trashed);
+  assert.strictEqual(copies().length, 1);
+  assert.deepStrictEqual(copies()[0].sheets.map(s => s.name).sort(), Object.keys(t.sheets).sort(), 'every tab, by its own name');
+  assert.ok(copies()[0].sheets.find(s => s.name === 'People').data.length > 1, 'with the data');
+  t.run('notifyDigest');
+  assert.strictEqual(copies().length, 1, 'not again within the day');
+  for (let i = 0; i < 35; i++) { t.props.LAST_BACKUP = '0'; t.run('notifyDigest'); }
+  assert.strictEqual(copies().length, 30, 'oldest trashed past 30');
+  assert.deepStrictEqual(t.env._errors, []);
+});
+
 test('no unexpected server errors were logged', () => {
   // each test builds a fresh env; this one just checks a full happy path is clean
   const { t } = setup();

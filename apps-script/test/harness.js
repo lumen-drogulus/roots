@@ -14,6 +14,8 @@ function makeEnv() {
     let maxRows = 1000;
     const sheet = {
       _data: data,
+      getName: () => name,
+      copyTo(dest) { return dest._addSheet(name, data); },
       getDataRange() {
         let last = data.length;
         while (last > 1 && data[last - 1].every(v => v === '')) last--;
@@ -60,10 +62,50 @@ function makeEnv() {
     getBytes: () => bytes, getContentType: () => type, getName: () => name
   });
 
+  // A small Drive: folders and files, enough for the daily backup.
+  const drive = { files: {}, folders: {}, seq: 0, now: () => Date.now() };
+  const iter = arr => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
+  function folderObj(id) {
+    const fo = drive.folders[id];
+    return {
+      getId: () => id, getName: () => fo.name,
+      getFoldersByName: n => iter(Object.values(drive.folders).filter(x => x.parent === id && x.name === n).map(x => folderObj(x.id))),
+      createFolder(n) { const nid = 'folder' + (++drive.seq); drive.folders[nid] = { id: nid, name: n, parent: id }; return folderObj(nid); },
+      getFiles: () => iter(Object.values(drive.files).filter(x => x.parent === id && !x.trashed).map(x => fileObj(x.id)))
+    };
+  }
+  function fileObj(id) {
+    const fi = drive.files[id];
+    return {
+      getId: () => id, getName: () => fi.name, getDateCreated: () => new Date(fi.created),
+      getParents: () => iter(fi.parent ? [folderObj(fi.parent)] : []),
+      moveTo(folder) { fi.parent = folder.getId(); return this; },
+      setTrashed(v) { fi.trashed = !!v; }
+    };
+  }
+  drive.folders.root = { id: 'root', name: 'My Drive', parent: null };
+  drive.folders.rootsFolder = { id: 'rootsFolder', name: 'Roots', parent: 'root' };
+  drive.files.mainSheet = { id: 'mainSheet', name: 'Roots data', parent: 'rootsFolder', created: 0, sheets: null };
+  function newSpreadsheet(name) {
+    const id = 'ss' + (++drive.seq);
+    const tabs = [{ name: 'Sheet1', data: [] }];
+    drive.files[id] = { id, name, parent: 'root', created: drive.now() + drive.seq, sheets: tabs };
+    const ss = {
+      getId: () => id,
+      getSheets: () => tabs.map(tb => ({ _tab: tb, getName: () => tb.name })),
+      deleteSheet(sh) { tabs.splice(tabs.indexOf(sh._tab), 1); },
+      _addSheet(n, data) { const tb = { name: 'Copy of ' + n, data: data.map(r => r.slice()) }; tabs.push(tb); return { setName(x) { tb.name = x; return this; } }; }
+    };
+    return ss;
+  }
+
   const env = {
     console: { log() {}, error: (...a) => env._errors.push(a.join(' ')) },
     _errors: [],
-    SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: n => sheets[n] || null }) },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => ({ getSheetByName: n => sheets[n] || null, getId: () => 'mainSheet', getSheets: () => Object.values(sheets) }),
+      create: newSpreadsheet
+    },
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: k => (k in props ? props[k] : null),
@@ -74,6 +116,7 @@ function makeEnv() {
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Utilities: {
       getUuid: () => crypto.randomUUID(),
+      formatDate: (d, _tz, _fmt) => d.toISOString().slice(0, 10),
       base64Decode: s => Array.from(Buffer.from(s, 'base64')),
       base64Encode: b => Buffer.from(b).toString('base64'),
       newBlob: blob
@@ -89,7 +132,9 @@ function makeEnv() {
           return { getId: () => id };
         }
       }),
+      getRootFolder: () => folderObj('root'),
       getFileById(id) {
+        if (drive.files[id]) return fileObj(id);
         const f = files[id];
         if (!f) throw new Error('no file ' + id);
         return {
@@ -100,7 +145,7 @@ function makeEnv() {
       }
     },
     MailApp: { sendEmail: (to, subject, body) => mails.push({ to, subject, body }), getRemainingDailyQuota: () => 100 },
-    Session: { getEffectiveUser: () => ({ getEmail: () => 'owner@example.com' }) },
+    Session: { getEffectiveUser: () => ({ getEmail: () => 'owner@example.com' }), getScriptTimeZone: () => 'America/Los_Angeles' },
     ScriptApp: { getProjectTriggers: () => [], newTrigger: () => ({ timeBased: () => ({ everyMinutes: () => ({ create() {} }) }) }) },
     ContentService: {
       MimeType: { JSON: 'json' },
@@ -115,7 +160,7 @@ function makeEnv() {
   for (const name of Object.keys(env.SCHEMA)) sheets[name] = makeSheet(name, env.SCHEMA[name]);
 
   return {
-    env, sheets, props, files, mails, formulaWrites,
+    env, sheets, props, files, mails, formulaWrites, drive,
     get(params) { return JSON.parse(env.doGet({ parameter: params }).text); },
     post(body) { return JSON.parse(env.doPost({ postData: { contents: JSON.stringify(body) } }).text); },
     run(fnName) { return env[fnName](); }

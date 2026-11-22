@@ -262,3 +262,8 @@ button:disabled { opacity: .55; cursor: progress; }
 .nudge .nbtns { display: flex; gap: 8px; }
 .nbtn { font: inherit; font-size: 15px; padding: 9px 16px; border-radius: 999px; border: 1px solid rgba(29,43,36,.25); background: #fff; color: #1D2B24; cursor: pointer; white-space: nowrap; }
 .nbtn.yes { background: #1D2B24; color: #FFFDF9; border-color: #1D2B24; }
+
+/* "+N": close family that isn't on screen from here; tap to center there */
+.more { position: absolute; min-width: 28px; height: 20px; padding: 0 7px; border-radius: 10px; border: 0; background: var(--ink); color: #FFFDF9; font: 600 11px/20px Jost, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer; z-index: 3; box-shadow: 0 1px 3px rgba(23, 36, 30, .25); }
+.more:hover { background: #2C3E35; }
+.more:focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }

@@ -52,11 +52,40 @@ const FIELD = { first_name: 'First name', middle_name: 'Middle name', birth_surn
 const listText = v => { try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) ? a.join(', ') : String(v); } catch (e) { return String(v); } };
 const showVal = (field, v) => field === 'married_names' ? (listText(v) || '(none)') : v === '' || v == null ? '(blank)' : /date/.test(field) ? fuzzy(v) : field === 'is_placeholder' ? (v === true || v === 'true' ? 'yes' : 'no') : String(v);
 
+/* ---------- date sanity: catch typos like 1987 for 1978 before they go public ---------- */
+let TREE = null;   // admin_tree: every row, every status
+async function loadTree() { try { TREE = await api('admin_tree'); } catch (e) { TREE = null; } return TREE; }
+const yearOf = d => { const m = /^(?:exact|about|before|after):(\d{1,4})/.exec(d || ''); return m ? +m[1] : null; };
+const personById = id => TREE && (TREE.People || []).find(p => p.id === id);
+function personWarnings(r) {
+  const b = yearOf(r.birth_date), d = yearOf(r.death_date), now = new Date().getFullYear(), w = [];
+  if (b && b > now) w.push(`born in ${b}, which hasn't happened yet`);
+  if (d && d > now) w.push(`died in ${d}, which hasn't happened yet`);
+  if (b && d && d < b) w.push(`died (${d}) before being born (${b})`);
+  if (b && d && d - b > 115) w.push(`lived ${d - b} years`);
+  if (b && !d && r.living === 'living' && now - b > 110) w.push(`marked living but born ${now - b} years ago`);
+  return w;
+}
+function linkWarnings(r) {
+  if (r.type !== 'parent_child') return [];
+  const par = personById(r.person_a), kid = personById(r.person_b);
+  if (!par || !kid) return [];
+  const pb = yearOf(par.birth_date), pd = yearOf(par.death_date), kb = yearOf(kid.birth_date), w = [];
+  const pn = par.first_name || 'The parent', kn = kid.first_name || 'the child';
+  if (pb && kb && kb <= pb) w.push(`${pn} (born ${pb}) would be born ${kb === pb ? 'the same year as' : 'after'} ${kn} (born ${kb})`);
+  else if (pb && kb && kb - pb < 12) w.push(`${pn} would be ${kb - pb} when ${kn} was born`);
+  else if (pb && kb && kb - pb > 80) w.push(`${pn} would be ${kb - pb} when ${kn} was born`);
+  if (pd && kb && kb - pd >= 2 && r.subtype !== 'adopted' && r.subtype !== 'step') w.push(`${pn} died in ${pd}, ${kb - pd} years before ${kn} was born`);
+  return w;
+}
+const warnBox = w => w.length ? `<div class="datewarn">Check the dates: ${esc0(w.join('; '))}.</div>` : '';
+
 /* ---------- gate ---------- */
 async function unlock(key) {
   KEY = key;
   const q = await api('admin_queue');
   store.set('roots_admin_key', key);
+  await loadTree();
   $('#gate').hidden = true; $('#app').hidden = false; $('#actions').hidden = false;
   showQueue(q);
 }
@@ -88,7 +117,7 @@ $('#btnPause').onclick = async () => {
 
 /* ---------- queue ---------- */
 async function loadQueue() {
-  try { showQueue(await api('admin_queue')); } catch (err) { $('#queue').innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+  try { const [q] = await Promise.all([api('admin_queue'), loadTree()]); showQueue(q); } catch (err) { $('#queue').innerHTML = `<p class="err">${esc(err.message)}</p>`; }
 }
 function describe(it) {
   const r = it.row;
@@ -97,14 +126,16 @@ function describe(it) {
       const facts = [r.living && `Living: ${r.living}`, r.birth_date && `Born ${fuzzy(r.birth_date)}${r.birth_place ? ', ' + r.birth_place : ''}`,
         r.death_date && `Died ${fuzzy(r.death_date)}${r.death_place ? ', ' + r.death_place : ''}`, r.source && `Source: ${r.source}`].filter(Boolean);
       const dups = (it.possible_duplicates || []).map(d => `<span>Might be <b>${esc(d.label)}</b>${d.birth_date ? ' (born ' + esc(fuzzy(d.birth_date)) + ')' : ''}</span><button class="btn" data-merge="${esc(d.id)}">Same person: merge</button>`).join('');
-      return { label: 'New person', what: esc(personName(r)), detail: esc(facts.join(' · ')) + (r.notes ? `<div class="story">${esc(r.notes)}</div>` : '') + (dups ? `<div class="dupwarn">${dups}</div>` : ''), edit: true };
+      return { label: 'New person', what: esc(personName(r)), detail: esc(facts.join(' · ')) + (r.notes ? `<div class="story">${esc(r.notes)}</div>` : '') + warnBox(personWarnings(r)) + (dups ? `<div class="dupwarn">${dups}</div>` : ''), edit: true };
     }
     case 'relationship': {
       const sub = r.subtype && r.subtype !== 'biological' && r.subtype !== 'unknown' ? ` (${r.subtype})` : '';
       const what = r.type === 'partner' ? `${esc(it.a_label)} and ${esc(it.b_label)}: partners${sub}` : `${esc(it.a_label)} is the parent of ${esc(it.b_label)}${sub}`;
-      return { label: 'New link', what, detail: r.source ? 'Source: ' + esc(r.source) : '' };
+      return { label: 'New link', what, detail: (r.source ? 'Source: ' + esc(r.source) : '') + warnBox(linkWarnings(r)) };
     }
     case 'suggestion':
+      if (r.field === 'remove') return { label: 'Wrong link', what: `Remove ${esc(it.target_label)}`,
+        detail: `Says this link is wrong. Approving takes it off the tree; both people stay.${r.source ? '<br>Source: ' + esc(r.source) : ''}` };
       return { label: 'Correction', what: `${esc(it.target_label)}: ${esc(FIELD[r.field] || r.field)}`,
         detail: `<span class="change"><s>${esc(showVal(r.field, it.current_value))}</s> → <b>${esc(showVal(r.field, it.proposed))}</b></span>${r.source ? '<br>Source: ' + esc(r.source) : ''}` };
     case 'photo': {
@@ -193,7 +224,7 @@ async function mergeInto(keepId, dropId, name) {
 /* ---------- everyone ---------- */
 let PEOPLE = [];
 async function loadPeople() {
-  try { const t = await api('admin_tree'); PEOPLE = t.People || []; setPaused(!!(t.meta && t.meta.paused)); showPeople(); }
+  try { const t = await loadTree(); if (!t) throw new Error("Couldn't load the tree."); PEOPLE = t.People || []; setPaused(!!(t.meta && t.meta.paused)); showPeople(); }
   catch (err) { $('#people').innerHTML = `<p class="err">${esc(err.message)}</p>`; }
 }
 function showPeople() {
@@ -209,7 +240,7 @@ function showPeople() {
       <span class="spacer"></span>
       ${p.status === 'merged'
         ? '<button class="btn" data-a="unmerge">Undo merge</button>'
-        : `<select data-a="mergesel" aria-label="Merge ${esc(p.first_name)} into"><option value="">Merge into…</option>${opts}</select><button class="btn bad" data-a="retract">Take back</button>`}
+        : `<button class="btn" data-a="links">Links</button><select data-a="mergesel" aria-label="Merge ${esc(p.first_name)} into"><option value="">Merge into…</option>${opts}</select><button class="btn bad" data-a="retract">Take back</button>`}
     </div>`).join('') : '<p class="empty">Nobody here yet.</p>');
   $('#pSearch').oninput = () => { const pos = $('#pSearch').selectionStart; showPeople(); $('#pSearch').focus(); $('#pSearch').setSelectionRange(pos, pos); };
   document.querySelectorAll('.prow').forEach(row => {
@@ -227,6 +258,8 @@ function showPeople() {
       try { await api('admin_retract', { items: [{ kind: 'person', id }] }); toast('Taken off the tree.'); } catch (err) { toast(err.message); }
       loadPeople();
     });
+    const lk = row.querySelector('[data-a="links"]');
+    if (lk) lk.onclick = () => showLinks(row, p);
     const sel = row.querySelector('[data-a="mergesel"]');
     if (sel) sel.onchange = () => {
       const keep = sel.value; if (!keep || keep === id) { sel.value = ''; return; }
@@ -241,5 +274,59 @@ function showPeople() {
   });
 }
 
+// A person's approved links, each with Take back. For a wrong link a relative made (or a "Yes, link them" tapped by
+// mistake): the link goes, both people stay.
+function showLinks(row, p) {
+  const open = row.querySelector('.links'); if (open) { open.remove(); return; }
+  const name = id => { const x = personById(id); return x ? personName(x) : '(missing)'; };
+  const rels = ((TREE && TREE.Relationships) || []).filter(r => r.status === 'approved' && (r.person_a === p.id || r.person_b === p.id));
+  const kind = r => r.subtype && !['biological', 'unknown', 'married', 'partner'].includes(r.subtype) ? ` (${r.subtype})` : '';
+  const text = r => r.type === 'partner' ? `Partners with ${name(r.person_a === p.id ? r.person_b : r.person_a)}${kind(r)}`
+    : r.person_a === p.id ? `Parent of ${name(r.person_b)}${kind(r)}` : `Child of ${name(r.person_a)}${kind(r)}`;
+  const box = document.createElement('div'); box.className = 'links';
+  box.innerHTML = rels.length ? rels.map(r => `<div class="lrow" data-r="${esc(r.id)}"><span>${esc(text(r))}</span><button class="btn bad" data-a="rback">Take back</button></div>`).join('')
+    : '<p class="empty">No links.</p>';
+  row.appendChild(box);
+  box.querySelectorAll('.lrow').forEach(lr => lr.querySelector('[data-a="rback"]').onclick = () => {
+    if (lr.querySelector('.confirm')) return;
+    const r = rels.find(x => x.id === lr.dataset.r);
+    const c = document.createElement('div'); c.className = 'confirm';
+    c.innerHTML = `<span>Remove the link "${esc(text(r))}"? Both people stay on the tree. You can approve it again later from the Sheet.</span><button class="btn quiet">Cancel</button><button class="btn primary">Take back</button>`;
+    lr.appendChild(c);
+    c.children[1].onclick = () => c.remove();
+    c.children[2].onclick = async () => {
+      try { await api('admin_retract', { items: [{ kind: 'relationship', id: r.id }] }); toast('Link taken back.'); } catch (err) { toast(err.message); }
+      await loadPeople(); const again = document.querySelector(`.prow[data-id="${CSS.escape(p.id)}"]`); if (again) showLinks(again, personById(p.id));
+    };
+  });
+}
+
 /* ---------- start ---------- */
 if (KEY) unlock(KEY).catch(() => { KEY = ''; store.del('roots_admin_key'); $('#gate').hidden = false; });
+
+/* ---- Stay current. GitHub Pages lets browsers keep every file for about 10 minutes, so right after a deploy a
+ * phone can run yesterday's page. On load (and when the page comes back to the front) ask for version.json, which
+ * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
+ * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
+(function () {
+  const BUILD = '7fb3b1c966';
+  let last = 0;
+  async function check() {
+    if (Date.now() - last < 60000) return;
+    last = Date.now();
+    let v;
+    try { v = (await (await fetch('version.json', { cache: 'no-store' })).json()).v; } catch (e) { return; }
+    if (!v || v === BUILD) return;
+    if (typeof window.ROOTS_BUSY === 'function' && window.ROOTS_BUSY()) { last = 0; return; }
+    let tried = null; try { tried = sessionStorage.getItem('roots_fresh'); } catch (e) {}
+    if (tried === v) return;
+    try { sessionStorage.setItem('roots_fresh', v); } catch (e) {}
+    const files = [...document.querySelectorAll('script[src], link[rel="stylesheet"][href]')]
+      .map(el => el.src || el.href).filter(u => u.startsWith(location.origin));
+    await Promise.all([location.href, ...files].map(u => fetch(u, { cache: 'reload' }).catch(() => {})));
+    location.reload();
+  }
+  window.ROOTS_CHECK_VERSION = () => { last = 0; return check(); };
+  check();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+})();

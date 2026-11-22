@@ -28,6 +28,9 @@ body = rep(body, '<div class="scrim" id="scrim"></div>', '''<div class="state" i
 <div class="banner paused" id="paused" hidden>Adding is paused for a little while. You can still look around.</div>
 
 <div class="scrim" id="scrim"></div>''')
+# "Show all" opens every bud, but in a big family it can't show everyone; the button says what it does.
+body = rep(body, 'aria-label="Show all branches"', 'aria-label="Open all branches"')
+body = rep(body, '<span class="lbl">Show all</span>', '<span class="lbl">Open all</span>')
 head = open('build/head.html').read()
 open('index.html', 'w').write(head + '<body>' + body + '<script src="config.js"></script>\n<script src="assets/app.js"></script>\n</body>\n</html>\n')
 
@@ -104,12 +107,11 @@ engine = rep(engine, between(engine, "  /* ---- siblings of the centered person 
     const fam = partnersOf(s.id).length + childrenOf(s.id).length;
     if (fam) {
       if (isOpen('fam:' + s.id)) {
-        let ox = cx;
-        partnersOf(s.id).forEach(pt => { ox += dir * (CW + CG); block.push({ id: pt.id, x: ox, y: 0, g: 0, kind: 'person', partnerOf: s.id }); });
-        const mid = partnersOf(s.id).length ? cx + dir * (CW + CG) / 2 : cx;
-        const ks = childrenOf(s.id);
-        let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
-        ks.forEach(k => { block.push({ id: k, x: kx + CW / 2, y: genY(-1), g: -1, kind: 'person' }); kx += CW + GAP; });
+        // the same couples layout as descendants: partners beside the sibling, each couple's children under it
+        const u = descUnit(s.id, 1);
+        block.length = 0;
+        descPlace(u, dir < 0 ? (lx - u.R) : (rx + u.L), 0, block);
+        Object.assign(block[0], { sibling: true, half: s.half });
       } else {
         block.push({ id: 'bud:fam:' + s.id, key: 'fam:' + s.id, x: cx, y: -(STATE.rootsBelow ? 1 : -1) * (CH / 2 + 26), g: -0.5, kind: 'bud', label: (P(s.id).first || '') + "'s family", count: fam, anchor: s.id });
       }
@@ -135,11 +137,15 @@ engine = rep(engine, "  /* ---- married-in families (partners of the centered pe
       placeBlock([{ id: 'bud:' + key, key, x: n.x, y: n.y + down * (CH / 2 + 26), g: n.g - 0.5, kind: 'bud', label: (P(s).first || 'Their') + "'s family", count: pts.length + ks.length, anchor: s }], dir);
       continue;
     }
-    // Partners first, beside the aunt or uncle; then the cousins under the couple, each block clearing what's already there.
-    let ox = n.x, mid = n.x;
-    pts.forEach((pt, i) => { ox += dir * (CW + CG); const b = [{ id: pt, x: ox, y: n.y, g: n.g, kind: 'person', partnerOf: s }]; placeBlock(b, dir); ox = b[0].x; if (!i) mid = (n.x + ox) / 2; });
-    let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
-    if (ks.length) placeBlock(ks.map(k => { const c = { id: k, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return c; }), dir);
+    // Their partners already sit beside them in the row (see withPartners); each couple's children go under that couple.
+    const prt = partnersOf(s).map(x => x.id).filter(x => nodes.has(x) && nodes.get(x).partnerOf === s);
+    const byOther = new Map();
+    ks.forEach(k => { const o = parentsOf(k).find(pp => prt.includes(pp)) || ''; if (!byOther.has(o)) byOther.set(o, []); byOther.get(o).push(k); });
+    for (const [o, kids] of byOther) {
+      const mid = o ? (n.x + nodes.get(o).x) / 2 : n.x;
+      let kx = mid - (kids.length * CW + (kids.length - 1) * GAP) / 2;
+      placeBlock(kids.map(k => { const c = { id: k, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return c; }), dir);
+    }
   }
 
   /* ---- married-in families (partners of the centered person and of their children) ---- */""")
@@ -151,8 +157,159 @@ engine = rep(engine, "cls += ' partner' + (e.sub === 'divorced' ? ' former' : ''
 engine = rep(engine, "r.dash = e.sub === 'divorced' ? '0.05 0.05' : null;", "r.dash = isFormer(e.sub) ? '0.05 0.05' : null;")
 engine = rep(engine, "r.deco.style.opacity = sub === 'divorced' ? .4 : 1;", "r.deco.style.opacity = isFormer(sub) ? .4 : 1;")
 engine = rep(engine, "const parentsOf = id => G.parents.get(id) || [];", "const parentsOf = id => G.parents.get(id) || [];\nconst isFormer = s => s === 'divorced' || s === 'former';")
+# ---- Couples: every partner sits beside the person, and each couple's children hang from that couple's rings. ----
+# Before: a second current partner sat past the first, so the second couple's children drew from the first couple's
+# rings (they read as the wrong spouse's), and a unit's width ignored that its children hang off-center, so cousins
+# overlapped. Now: current partners right, former left, each side filled once before either doubles up (partners who
+# share the most children sit nearest), and child groups are laid out left to right under their own couple.
+engine = rep(engine, between(engine, "  /* ---- the centered person's row", "  /* ---- siblings of the centered person"),
+  """  /* ---- partners beside a person: current right, former left, one each side before either doubles up ---- */
+  function splitSides(id, pts) {
+    const n = pid => childrenOf(id).filter(c => parentsOf(c).includes(pid)).length;
+    const byKids = a => [...a].sort((x, y) => n(y.id) - n(x.id)).map(x => x.id);
+    const right = byKids(pts.filter(pt => !isFormer(pt.sub))), left = byKids(pts.filter(pt => isFormer(pt.sub)));
+    if (right.length > 1 && !left.length) left.push(right.pop());
+    else if (left.length > 1 && !right.length) right.push(left.pop());
+    return { left, right };
+  }
+
+  /* ---- the centered person's row ---- */
+  const sidesF = splitSides(F, partnersOf(F).filter(pt => !nodes.has(pt.id)));
+  const current = sidesF.right.map(id => ({ id })), former = sidesF.left.map(id => ({ id }));
+  let rx = FW / 2 + CG, lx = -(FW / 2 + CG);
+  const sideOf = {};
+  sidesF.right.forEach(pid => { addNode(pid, rx + CW / 2, 0, { partnerOf: F }); occupy(0, rx, rx + CW); sideOf[pid] = 1; rx += CW + CG; });
+  sidesF.left.forEach(pid => { addNode(pid, lx - CW / 2, 0, { partnerOf: F }); occupy(0, lx - CW, lx); sideOf[pid] = -1; lx -= CW + CG; });
+
+  /* ---- descendants: each couple's children under that couple ---- */
+  // A unit is measured from its person's x: L and R are how far it reaches left and right, every generation included.
+  function descUnit(id, depth) {
+    const u = { id, cards: [], groups: [], bud: null };
+    const s = splitSides(id, partnersOf(id));
+    s.right.forEach((pid, i) => u.cards.push({ id: pid, dx: (i + 1) * (CW + CG) }));
+    s.left.forEach((pid, i) => u.cards.push({ id: pid, dx: -(i + 1) * (CW + CG) }));
+    const midOf = pid => { const c = u.cards.find(c => c.id === pid); return c ? c.dx / 2 : 0; };
+    let L = CW / 2 + s.left.length * (CW + CG), R = CW / 2 + s.right.length * (CW + CG);
+    const kids = childrenOf(id);
+    if (kids.length && (depth < MAX_DOWN || isOpen('down:' + id))) {
+      const byOther = new Map();
+      kids.forEach(k => { const o = parentsOf(k).find(pp => pp !== id && u.cards.some(c => c.id === pp)) || ''; if (!byOther.has(o)) byOther.set(o, []); byOther.get(o).push(k); });
+      const order = [...[...s.left].reverse(), '', ...s.right].filter(o => byOther.has(o));
+      let prev = -Infinity;
+      const gs = order.map(o => {
+        const units = byOther.get(o).map(k => descUnit(k, depth + 1));
+        const gw = units.reduce((t, k) => t + k.L + k.R, 0) + (units.length - 1) * GAP;
+        const want = midOf(o) - gw / 2, left = Math.max(want, prev + GAP);
+        prev = left + gw;
+        return { units, gw, want, left };
+      });
+      // groups pushed apart drift right; spread the drift so the whole family stays centered under its couples
+      const drift = gs.reduce((t, g) => t + g.left - g.want, 0) / gs.length;
+      for (const g of gs) {
+        let cur = g.left - drift;
+        L = Math.max(L, -cur); R = Math.max(R, cur + g.gw);
+        for (const k of g.units) { u.groups.push({ unit: k, dx: cur + k.L }); cur += k.L + k.R + GAP; }
+      }
+    } else if (kids.length) {
+      const near = s.right[0] || s.left[0];
+      u.bud = { key: 'down:' + id, label: kids.length === 1 ? '1 child' : kids.length + ' children', dx: near ? midOf(near) : 0 };
+      L = Math.max(L, BUDW / 2 - u.bud.dx); R = Math.max(R, u.bud.dx + BUDW / 2);
+    }
+    u.L = L; u.R = R;
+    return u;
+  }
+  function descPlace(u, x, g, block) {
+    block.push({ id: u.id, x, y: genY(g), g, kind: 'person' });
+    u.cards.forEach(c => block.push({ id: c.id, x: x + c.dx, y: genY(g), g, kind: 'person', partnerOf: u.id }));
+    if (u.bud) block.push({ id: 'bud:' + u.bud.key, key: u.bud.key, x: x + u.bud.dx, y: genY(g - 1), g: g - 1, kind: 'bud', label: u.bud.label, anchor: u.id });
+    u.groups.forEach(k => descPlace(k.unit, x + k.dx, g - 1, block));
+  }
+  const groups = new Map();
+  childrenOf(F).forEach(c => { const other = parentsOf(c).find(pp => pp !== F) || ''; if (!groups.has(other)) groups.set(other, []); groups.get(other).push(c); });
+  const orderedGroups = [...groups.entries()].sort((a, b) => (sideOf[a[0]] || 0) - (sideOf[b[0]] || 0));
+  for (const [other, kids] of orderedGroups) {
+    const mid = other && nodes.has(other) && sideOf[other] ? nodes.get(other).x / 2 : 0;
+    const units = kids.map(k => descUnit(k, 1));
+    const total = units.reduce((s, u) => s + u.L + u.R, 0) + (units.length - 1) * GAP;
+    const block = [];
+    let kx = mid - total / 2;
+    units.forEach(u => { descPlace(u, kx + u.L, -1, block); kx += u.L + u.R + GAP; });
+    placeBlock(block, (sideOf[other] || 1));
+  }
+
+""")
+
+# ---- "+N" on any card whose close family isn't on screen and isn't behind a bud. Tap it to center there. ----
+# Centering on anyone always draws their parents, partners, children and siblings, so this reaches everyone,
+# including family shapes the layout has no special place for.
+engine = rep(engine, "  // which opened groups hang from which card, so each can be folded again",
+  """  // close family that no bud on this screen would reveal: shown as "+N", tap to center there.
+  // "Reveal" is everyone drawn with every bud open (one extra layout pass, about a millisecond).
+  let reveal = placed;
+  if (!STATE.all) { STATE.all = true; try { reveal = new Set(layout().nodes.keys()); } finally { STATE.all = false; } }
+  for (const n of nodes.values()) {
+    if (n.kind !== 'person' || n.id === F || P(n.id).placeholder) continue;
+    const fam = [...parentsOf(n.id), ...childrenOf(n.id), ...partnersOf(n.id).map(x => x.id), ...siblingsOf(n.id).map(x => x.id)];
+    const hidden = new Set(fam.filter(x => !reveal.has(x) && !P(x).placeholder));
+    if (hidden.size) n.more = hidden.size;
+  }
+  // which opened groups hang from which card, so each can be folded again""")
+engine = rep(engine, "    rec.el.querySelectorAll('.fold').forEach(f => f.remove());",
+  """    rec.el.querySelectorAll('.fold, .more').forEach(f => f.remove());
+    if (n.more) {
+      const m = document.createElement('button');
+      m.className = 'more';
+      m.style.top = ((n.id === STATE.focus ? FH : CH) / 2 - 12) + 'px';
+      m.style.left = ((n.id === STATE.focus ? FW : CW) / 2 - 30) + 'px';
+      m.textContent = '+' + n.more;
+      const who = P(n.id).first || 'them';
+      m.title = `${n.more} more ${n.more === 1 ? 'relative' : 'relatives'}. Tap to center on ${who}.`;
+      m.setAttribute('aria-label', m.title);
+      m.addEventListener('click', e => { e.stopPropagation(); closePanel(); STATE.focus = n.id; render(); });
+      rec.el.appendChild(m);
+    }""")
+keyjs = rep(keyjs, "'A folded branch', 'More relatives live here. Tap the bud to open it; tap the small minus on the card to fold it again.')}",
+  "'A folded branch', 'More relatives live here. Tap the bud to open it; tap the small minus on the card to fold it again.')}\n      ${row(`<svg viewBox=\"0 0 92 34\" aria-hidden=\"true\"><rect x=\"8\" y=\"4\" width=\"70\" height=\"26\" rx=\"6\" fill=\"#FFFDF9\" stroke=\"#1D2B24\" stroke-opacity=\".12\"/><rect x=\"58\" y=\"20\" width=\"28\" height=\"14\" rx=\"7\" fill=\"#1D2B24\"/><text x=\"72\" y=\"30.5\" text-anchor=\"middle\" font-size=\"9\" font-family=\"Jost, sans-serif\" font-weight=\"600\" fill=\"#FFFDF9\">+3</text></svg>`, 'More family off the tree', 'This person has relatives who aren\\'t on screen from here. Tap the number to center the tree on them.')}")
+# An opened aunt or uncle brings their partners into the ancestors' row, one on each side of them, so no sibling
+# lands between a couple (Christopher sat between Barbara and Tom with every branch open).
+engine = rep(engine, "  function pedExtents(id, depth, side) {",
+  """  function withPartners(s, side) {
+    if (!isOpen('fam:' + s)) return [{ id: s }];
+    const sd = splitSides(s, partnersOf(s).filter(pt => !lineSet.has(pt.id)));
+    const inner = side === 'left' ? sd.right : sd.left, outer = side === 'left' ? sd.left : sd.right;
+    return [...[...inner].reverse().map(pt => ({ id: pt, partnerOf: s, inner: true })), { id: s, coupleGap: inner.length > 0 }, ...outer.map(pt => ({ id: pt, partnerOf: s }))];
+  }
+  function pedExtents(id, depth, side) {""")
+engine = rep(engine, "sibExtras.push(...sibs.map(s => ({ id: s })))", "sibExtras.push(...sibs.flatMap(s => withPartners(s, side)))")
+engine = rep(engine, "const extraW = t.extras.reduce((s, e) => s + (e.bud ? BUDW : CW) + GAP, 0);",
+  "const extraW = t.extras.reduce((s, e) => s + (e.bud ? BUDW : CW) + GAP + ((e.partnerOf && !e.inner) || e.coupleGap ? CG - GAP : 0), 0);")
+engine = rep(engine, "      if (e.partnerOf) off += CG - GAP;", "      if ((e.partnerOf && !e.inner) || e.coupleGap) off += CG - GAP;")
+# Nothing may land between an ancestor couple: the pedigree spreads them apart to fit their own parents, and that gap
+# used to catch cousins, so the couple read as split.
+engine = rep(engine, "    if (t.parents.length === 2) { pedPlace(t.parents[0], x - t.da, g + 1); pedPlace(t.parents[1], x + t.db, g + 1); }",
+  "    if (t.parents.length === 2) { occupy(g + 1, x - t.da, x + t.db); pedPlace(t.parents[0], x - t.da, g + 1); pedPlace(t.parents[1], x + t.db, g + 1); }")
 ui = open('build/app-ui.js').read()
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
 app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-boot.js').read()
+# Busy = a form or card is open: the freshness check waits rather than reload under someone's typing.
+app += "\nwindow.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || saving;\n"
+
+# ---------------- versions: one id for this build, stamped everywhere ----------------
+import hashlib
+fresh = open('build/fresh.js').read()
+admin_js = open('assets/admin.js').read()
+admin_js = re.sub(r"\n/\* ---- Stay current\..*\Z", "", admin_js, flags=re.S).rstrip() + "\n"
+hx = hashlib.sha256()
+for part in (app, style, open('index.html').read(), re.sub(r'\?v=\w+', '', open('admin.html').read()), admin_js, open('assets/admin.css').read(), open('config.js').read(), fresh):
+    hx.update(part.encode())
+BUILD = hx.hexdigest()[:10]
+app += '\n' + fresh.replace('__BUILD__', BUILD)
 open('assets/app.js', 'w').write(app)
-print(len(app), 'bytes of JS;', app.count('\n'), 'lines')
+open('assets/admin.js', 'w').write(admin_js + '\n' + fresh.replace('__BUILD__', BUILD))
+open('version.json', 'w').write('{"v": "%s"}\n' % BUILD)
+# Asset links carry the build id, so a refreshed page can't pair new HTML with old script.
+stamp = lambda html: re.sub(r'(href|src)="((?:assets/(?:app|admin)\.(?:css|js))|config\.js)(?:\?v=\w+)?"', lambda m: '%s="%s?v=%s"' % (m.group(1), m.group(2), BUILD), html)
+for page in ('index.html', 'admin.html'):
+    html = open(page).read()          # read before opening for write, which empties the file
+    open(page, 'w').write(stamp(html))
+print(len(app), 'bytes of JS;', app.count('\n'), 'lines; build', BUILD)

@@ -18,7 +18,7 @@ const INTRO = [
     <h1>How it works</h1>
     <ul class="howto">
       <li><span class="ic">${ICON.bud.replace('currentColor', '#A9822F')}</span><div><b>Tap anyone to see their story.</b><span>Names, dates and memories for those who've passed. Living relatives show by name only.</span></div></li>
-      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it, or use Show all.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it. A small +3 on a card means more family there: tap it to center the tree on them.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><b>Add who you know.</b><span>Especially the relatives we've lost. A first name is enough to start. ${OWNER_NAME} confirms each addition.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></span><div><b>Not sure what a line means?</b><span>Tap Key at the top for every symbol and line type.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
@@ -116,7 +116,18 @@ async function reload(opts = {}) {
   if (!G.people.size) { clearTree(); if (!$('#intro').classList.contains('on')) showEmpty(); return; }
   $('#empty').hidden = true;
   const nothingShown = !live.size;   // first paint, or first person after an empty tree
-  render({ camera: firstTime || nothingShown || opts.camera ? 'instant' : false, grow: true });
+  // Just saved someone who has no place on screen from here: center on the person they were added to,
+  // whose close family always draws, so the new person never seems to vanish.
+  let moved = false;
+  if (showAfterSave) {
+    const { anchor, ids } = showAfterSave; showAfterSave = null;
+    const added = ids.filter(x => G.people.has(x));
+    if (added.length && G.people.has(anchor) && STATE.focus !== anchor && G.people.has(STATE.focus)) {
+      const L = layout();
+      if (added.some(x => !L.nodes.has(x))) { STATE.focus = anchor; moved = true; }
+    }
+  }
+  render({ camera: firstTime || nothingShown || opts.camera ? 'instant' : moved ? undefined : false, grow: true });
 }
 function showLoadError(msg) {
   const el = $('#loading');

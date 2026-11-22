@@ -1,7 +1,7 @@
 """End-to-end run of the real pages against the local API (apps-script/test/server.js).
 Start: node apps-script/test/server.js 8787 & python3 -m http.server 8000 --bind 127.0.0.1 &
 Run:   python3 apps-script/test/e2e.py"""
-import asyncio, json, urllib.request
+import asyncio, json, urllib.request, re
 from playwright.async_api import async_playwright
 
 API = 'http://localhost:8787'
@@ -303,6 +303,10 @@ async def main():
         st13 = json.loads(urllib.request.urlopen(API + '/__sheet').read())
         hank = next(r[0] for r in st13['People'][1:] if r[2] == 'Hank')
         check('one-parent half-sibling gets an unknown other parent', sum(1 for r in st13['Relationships'][1:] if r[2] == 'parent_child' and r[4] == hank) == 2)
+        # Hank has no place on screen from Jonny: the tree moves to Robert, the card he was added to, so he can't vanish
+        moved = await tp.evaluate(f"({{ focus: P(STATE.focus).first, drawn: currentLayout.nodes.has('{hank}') }})")
+        check('saving someone off-screen centers on the card they were added to', moved == {'focus': 'Robert', 'drawn': True}, moved)
+        await tp.evaluate(f"STATE.focus = '{jonny_id}'; render()"); await tp.wait_for_timeout(800)
 
         # ---------- former partners, never married ----------
         await tp.locator('.card.focus').click(); await tp.wait_for_timeout(300); await tp.click('#pAdd'); await tp.wait_for_timeout(300)
@@ -349,6 +353,45 @@ async def main():
         check('question gone once linked', await tp.locator('.nudge', has_text='Kay').count() == 0)
         await tp.screenshot(path=OUT + '08_nudge.png')
         await tp.click('#pClose'); await tp.wait_for_timeout(200)
+
+        # ---------- a wrong link: a relative reports it from Edit, the owner approves, the link goes and both people stay ----------
+        sheet = lambda: json.loads(urllib.request.urlopen(API + '/__sheet').read())
+        s17 = sheet(); P17 = {r[2]: r[0] for r in s17['People'][1:] if r[2]}
+        kay_sky = next(r[0] for r in s17['Relationships'][1:] if r[2] == 'parent_child' and r[3] == P17['Kay'] and r[4] == P17['Sky'])
+        await rp.reload(); await wait_api(rp)
+        await rp.evaluate(f"openPerson('{P17['Sky']}')"); await rp.wait_for_timeout(400); await rp.click('#pEdit'); await rp.wait_for_timeout(300)
+        await rp.select_option(f"#fPk_{P17['Kay']}", value='__remove')
+        await rp.click('#pSave'); await rp.wait_for_timeout(1500); await rp.click('#thanksBack'); await rp.wait_for_timeout(800)
+        s18 = sheet()
+        check('relative reports a wrong link from Edit', any(r[1] == 'pending' and r[2] == kay_sky and r[3] == 'remove' for r in s18['Suggestions'][1:]))
+        await op.click('#tabQueue'); await op.wait_for_timeout(1500)
+        wrong = op.locator('.item', has_text='Wrong link')
+        check('approvals show it as a wrong link, in words', await wrong.count() == 1 and 'as the parent of' in await wrong.inner_text())
+        await wrong.locator('[data-act="approve"]').click(); await op.wait_for_timeout(1500)
+        s19 = sheet()
+        check('approving takes the link off; both people stay', next(r[1] for r in s19['Relationships'][1:] if r[0] == kay_sky) == 'rejected'
+              and all(next(r[1] for r in s19['People'][1:] if r[0] == P17[n]) == 'approved' for n in ('Kay', 'Sky')))
+
+        # ---------- the owner takes back one link from the Everyone tab ----------
+        pat_lee = next(r[0] for r in s19['Relationships'][1:] if r[2] == 'parent_child' and r[3] == P17['Pat'] and r[4] == P17['Lee'] and r[1] == 'approved')
+        await op.click('#tabPeople'); await op.wait_for_timeout(1500)
+        prow = op.locator('.prow').filter(has=op.locator('.nm', has_text=re.compile('^Pat$'))).first
+        await prow.locator('[data-a="links"]').click(); await op.wait_for_timeout(300)
+        await prow.locator('.lrow', has_text='Lee').locator('[data-a="rback"]').click(); await prow.locator('.lrow .confirm .primary').click(); await op.wait_for_timeout(1500)
+        check('owner takes back a single link', next(r[1] for r in sheet()['Relationships'][1:] if r[0] == pat_lee) == 'rejected')
+
+        # ---------- impossible dates are flagged before approval ----------
+        await rp.locator('.card.focus').click(); await rp.wait_for_timeout(300); await rp.click('#pAdd'); await rp.wait_for_timeout(300)
+        await rp.locator('#fRel button[data-v="sibling"]').click(); await rp.wait_for_timeout(150)
+        await rp.fill('#fFirst', 'Backwards'); await rp.locator('#fLiving button[data-v="deceased"]').click()
+        await rp.fill('#fBorn', '1950'); await rp.fill('#fDied', '1940')
+        await rp.click('#pSave'); await rp.wait_for_timeout(1500); await rp.click('#thanksBack'); await rp.wait_for_timeout(800)
+        await op.click('#tabQueue'); await op.wait_for_timeout(1500)
+        warn = op.locator('.item', has_text='Backwards').locator('.datewarn')
+        wtexts = await op.locator('.batch', has_text='Backwards').locator('.datewarn').all_inner_texts()
+        check('a death before a birth is flagged on approvals', any('before being born' in w for w in wtexts), wtexts)
+        await op.locator('.batch', has_text='Backwards').locator('[data-all="reject"]').click(); await op.wait_for_timeout(1200)
+        await op.screenshot(path=OUT + '09_approvals.png', full_page=True)
 
         # ---------- pause ----------
         await op.click('#btnPause'); await op.wait_for_timeout(700)
