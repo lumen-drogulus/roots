@@ -93,14 +93,19 @@ engine = rep(engine, "  /* ---- married-in families (partners of the centered pe
 
   /* ---- married-in families (partners of the centered person and of their children) ---- */""")
 # Half-siblings sit on the side of the parent they share, so their line drops down instead of crossing the tree.
-# Full siblings stay on the left. Right-side half-siblings go past any current partners.
+# Full siblings go on the side with fewer of the person's partners, left on a tie (2026-11-21: centered on Amanda, her
+# ex sat left and her siblings were pushed out past him, reading as his family). Right-side half-siblings go past any
+# current partners.
 engine = rep(engine, between(engine, "  /* ---- siblings of the centered person (left), with their families folded ---- */", "  /* ---- step-siblings"),
-  """  /* ---- siblings of the centered person, with their families folded: full on the left, half on their shared parent's side ---- */
+  """  /* ---- siblings of the centered person, with their families folded: full on the side with fewer partners (left on a
+     tie), half on their shared parent's side ---- */
   const sibs = siblingsOf(F).filter(s => !nodes.has(s.id));
   sibs.sort((a, b) => a.half - b.half);
   const myPars = parentsOf(F);
+  const ptX = partnersOf(F).map(x => nodes.get(x.id)).filter(n => n && n.y === 0).map(n => n.x);
+  const fullDir = ptX.filter(x => x < 0).length > ptX.filter(x => x > 0).length ? 1 : -1;
   const sibSide = s => {
-    if (!s.half) return -1;
+    if (!s.half) return fullDir;
     const shared = parentsOf(s.id).filter(x => myPars.includes(x) && nodes.has(x));
     return shared.length === 1 && nodes.get(shared[0]).x > 0 ? 1 : -1;
   };

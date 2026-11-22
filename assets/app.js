@@ -447,12 +447,15 @@ function layout() {
     placeBlock(block, (sideOf[other] || 1));
   }
 
-  /* ---- siblings of the centered person, with their families folded: full on the left, half on their shared parent's side ---- */
+  /* ---- siblings of the centered person, with their families folded: full on the side with fewer partners (left on a
+     tie), half on their shared parent's side ---- */
   const sibs = siblingsOf(F).filter(s => !nodes.has(s.id));
   sibs.sort((a, b) => a.half - b.half);
   const myPars = parentsOf(F);
+  const ptX = partnersOf(F).map(x => nodes.get(x.id)).filter(n => n && n.y === 0).map(n => n.x);
+  const fullDir = ptX.filter(x => x < 0).length > ptX.filter(x => x > 0).length ? 1 : -1;
   const sibSide = s => {
-    if (!s.half) return -1;
+    if (!s.half) return fullDir;
     const shared = parentsOf(s.id).filter(x => myPars.includes(x) && nodes.has(x));
     return shared.length === 1 && nodes.get(shared[0]).x > 0 ? 1 : -1;
   };
@@ -1947,7 +1950,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '3274778104';
+  const BUILD = '15ff9d1dc1';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;
