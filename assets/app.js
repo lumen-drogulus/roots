@@ -1479,7 +1479,10 @@ function siteBase() { return location.origin + location.pathname.replace(/[^/]*$
 function shareLink() { const from = STATE.viewer || ''; return siteBase() + (from ? '?from=' + encodeURIComponent(from) : ''); }
 function openSend() {
   const v = STATE.viewer && P(STATE.viewer);
-  const msg = `I'm helping build our family tree. Open this, look around, and add anyone you know, especially the relatives we've lost. It takes a minute.\n\n${shareLink()}`;
+  // The owner's own message is short; a relative forwarding it needs to say who is building this and why it's reaching them.
+  const msg = ADMIN_KEY
+    ? `I'm helping build our family tree. Open this, look around, and add anyone you know, especially the relatives we've lost. It takes a minute.\n\n${shareLink()}`
+    : `${OWNER_NAME} is putting together a family tree for our whole family, and he's asking each of us to pass it along to the relatives we know. That's how it reaches every branch. I'm sending it to you because you probably know names and stories I don't.\n\nOpen the link, look around, and add anyone you know, especially relatives who have passed. It takes a few minutes.\n\n${shareLink()}`;
   openPanel(`
     <div class="head"><div><h2>Send Roots to a family member</h2><div class="sub">${v ? `The link opens the tree on you, ${esc(v.first)}, so they start somewhere familiar.` : 'Tip: tap your own card and choose "This is me" first, so the link opens the tree on you.'}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
@@ -1739,7 +1742,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '355abb614c';
+  const BUILD = 'f0ee4008de';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;
