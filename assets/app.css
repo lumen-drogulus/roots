@@ -292,3 +292,6 @@ button:disabled { opacity: .55; cursor: progress; }
 .pick .picklab { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); margin: 4px 2px 0; }
 .pick button[aria-pressed="true"] { border: 1.5px solid var(--ink); background: #F4F1E8; }
 .pick button[aria-pressed="true"] small { color: var(--ink); font-weight: 500; }
+
+/* Add tile carries a longer label now that documents are uploadable too (2026-11-22). */
+.photo.add { text-align: center; padding: 6px; line-height: 1.3; }

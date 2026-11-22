@@ -164,7 +164,7 @@ function openPerson(id) {
   if (!p.placeholder && !p.pending) {
     const ph = PHOTOS.get(id) || [];
     const tiles = ph.slice(0, 6).map(f => `<a class="photo real" href="${photoURL(f.file_id, 1600)}" target="_blank" rel="noopener" title="${esc(f.caption || 'Photo')}"><img src="${photoURL(f.file_id, 400)}" alt="${esc(f.caption || 'Photo of ' + p.first)}" loading="lazy"></a>`).join('');
-    body += `<div><div class="label">Photos</div><div class="photos">${tiles}<button class="photo add" id="pAddPhoto">Add a photo</button></div></div>`;
+    body += `<div><div class="label">Photos &amp; documents</div><div class="photos">${tiles}<button class="photo add" id="pAddPhoto">Add photos or documents</button></div></div>`;
   }
   if (!p.placeholder && !living && p.addedBy) body += `<p class="prov">Added by ${esc(p.addedBy)}${p.source ? ' · Source: ' + esc(p.source) : ''}</p>`;
   const isFocus = id === STATE.focus;
@@ -195,7 +195,7 @@ function openPerson(id) {
   $('#pAdd').onclick = () => openAdd(id);
   if ($('#pEdit')) $('#pEdit').onclick = () => openEdit(id);
   if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);
-  const ap = $('#pAddPhoto'); if (ap) ap.onclick = () => toast('Adding photos is coming soon.');
+  const ap = $('#pAddPhoto'); if (ap) ap.onclick = () => toast('Adding photos and documents is coming soon.');
   document.querySelectorAll('.nudge').forEach(n => {
     const [a, b] = n.dataset.pair.split('>');
     n.querySelector('[data-no]').onclick = () => {
