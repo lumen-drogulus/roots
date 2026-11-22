@@ -369,26 +369,34 @@ function layout() {
     placeBlock(block, (sideOf[other] || 1));
   }
 
-  /* ---- siblings of the centered person (left), with their families folded ---- */
+  /* ---- siblings of the centered person, with their families folded: full on the left, half on their shared parent's side ---- */
   const sibs = siblingsOf(F).filter(s => !nodes.has(s.id));
   sibs.sort((a, b) => a.half - b.half);
+  const myPars = parentsOf(F);
+  const sibSide = s => {
+    if (!s.half) return -1;
+    const shared = parentsOf(s.id).filter(x => myPars.includes(x) && nodes.has(x));
+    return shared.length === 1 && nodes.get(shared[0]).x > 0 ? 1 : -1;
+  };
   for (const s of sibs) {
-    const block = [{ id: s.id, x: lx - CW / 2, y: 0, g: 0, kind: 'person', sibling: true, half: s.half }];
+    const dir = sibSide(s), cx = (dir < 0 ? lx : rx) + dir * CW / 2;
+    const block = [{ id: s.id, x: cx, y: 0, g: 0, kind: 'person', sibling: true, half: s.half }];
     const fam = partnersOf(s.id).length + childrenOf(s.id).length;
     if (fam) {
       if (isOpen('fam:' + s.id)) {
-        let ox = lx - CW / 2;
-        partnersOf(s.id).forEach(pt => { ox -= CW + CG; block.push({ id: pt.id, x: ox, y: 0, g: 0, kind: 'person', partnerOf: s.id }); });
-        const mid = partnersOf(s.id).length ? (lx - CW / 2 + lx - CW / 2 - CW - CG) / 2 : lx - CW / 2;
+        let ox = cx;
+        partnersOf(s.id).forEach(pt => { ox += dir * (CW + CG); block.push({ id: pt.id, x: ox, y: 0, g: 0, kind: 'person', partnerOf: s.id }); });
+        const mid = partnersOf(s.id).length ? cx + dir * (CW + CG) / 2 : cx;
         const ks = childrenOf(s.id);
         let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
         ks.forEach(k => { block.push({ id: k, x: kx + CW / 2, y: genY(-1), g: -1, kind: 'person' }); kx += CW + GAP; });
       } else {
-        block.push({ id: 'bud:fam:' + s.id, key: 'fam:' + s.id, x: lx - CW / 2, y: -(STATE.rootsBelow ? 1 : -1) * (CH / 2 + 26), g: -0.5, kind: 'bud', label: (P(s.id).first || '') + "'s family", count: fam, anchor: s.id });
+        block.push({ id: 'bud:fam:' + s.id, key: 'fam:' + s.id, x: cx, y: -(STATE.rootsBelow ? 1 : -1) * (CH / 2 + 26), g: -0.5, kind: 'bud', label: (P(s.id).first || '') + "'s family", count: fam, anchor: s.id });
       }
     }
-    placeBlock(block, -1);
-    lx = Math.min(...block.filter(n => n.g === 0).map(n => nodeSpan(n)[0])) - GAP;
+    placeBlock(block, dir);
+    const spans = block.filter(n => n.g === 0).map(n => nodeSpan(n));
+    if (dir < 0) lx = Math.min(...spans.map(x => x[0])) - GAP; else rx = Math.max(...spans.map(x => x[1])) + GAP;
   }
 
   /* ---- step-siblings: children of the centered person's step-parents, on that step-parent's side ---- */

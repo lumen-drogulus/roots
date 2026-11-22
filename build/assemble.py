@@ -86,6 +86,40 @@ engine = rep(engine, "  /* ---- married-in families (partners of the centered pe
   }
 
   /* ---- married-in families (partners of the centered person and of their children) ---- */""")
+# Half-siblings sit on the side of the parent they share, so their line drops down instead of crossing the tree.
+# Full siblings stay on the left. Right-side half-siblings go past any current partners.
+engine = rep(engine, between(engine, "  /* ---- siblings of the centered person (left), with their families folded ---- */", "  /* ---- step-siblings"),
+  """  /* ---- siblings of the centered person, with their families folded: full on the left, half on their shared parent's side ---- */
+  const sibs = siblingsOf(F).filter(s => !nodes.has(s.id));
+  sibs.sort((a, b) => a.half - b.half);
+  const myPars = parentsOf(F);
+  const sibSide = s => {
+    if (!s.half) return -1;
+    const shared = parentsOf(s.id).filter(x => myPars.includes(x) && nodes.has(x));
+    return shared.length === 1 && nodes.get(shared[0]).x > 0 ? 1 : -1;
+  };
+  for (const s of sibs) {
+    const dir = sibSide(s), cx = (dir < 0 ? lx : rx) + dir * CW / 2;
+    const block = [{ id: s.id, x: cx, y: 0, g: 0, kind: 'person', sibling: true, half: s.half }];
+    const fam = partnersOf(s.id).length + childrenOf(s.id).length;
+    if (fam) {
+      if (isOpen('fam:' + s.id)) {
+        let ox = cx;
+        partnersOf(s.id).forEach(pt => { ox += dir * (CW + CG); block.push({ id: pt.id, x: ox, y: 0, g: 0, kind: 'person', partnerOf: s.id }); });
+        const mid = partnersOf(s.id).length ? cx + dir * (CW + CG) / 2 : cx;
+        const ks = childrenOf(s.id);
+        let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
+        ks.forEach(k => { block.push({ id: k, x: kx + CW / 2, y: genY(-1), g: -1, kind: 'person' }); kx += CW + GAP; });
+      } else {
+        block.push({ id: 'bud:fam:' + s.id, key: 'fam:' + s.id, x: cx, y: -(STATE.rootsBelow ? 1 : -1) * (CH / 2 + 26), g: -0.5, kind: 'bud', label: (P(s.id).first || '') + "'s family", count: fam, anchor: s.id });
+      }
+    }
+    placeBlock(block, dir);
+    const spans = block.filter(n => n.g === 0).map(n => nodeSpan(n));
+    if (dir < 0) lx = Math.min(...spans.map(x => x[0])) - GAP; else rx = Math.max(...spans.map(x => x[1])) + GAP;
+  }
+
+""")
 # Aunts and uncles: an ancestor's sibling folds their own partner and children (the centered person's cousins)
 # into a "Barbara's family" bud, tucked toward the children's row, the same way the centered person's siblings do.
 engine = rep(engine, "  /* ---- married-in families (partners of the centered person and of their children) ---- */",
