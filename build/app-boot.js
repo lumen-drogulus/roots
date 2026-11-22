@@ -44,8 +44,8 @@ function renderIntro() {
   if (step === 2) {
     const list = () => {
       const q = $('#iName').value.toLowerCase().trim();
-      const hits = [...G.people.values()].filter(p => !p.placeholder && isLiving(p) && (!q || displayName(p).toLowerCase().includes(q))).slice(0, 6);
-      $('#iList').innerHTML = hits.map(p => `<button data-id="${p.id}"><span>${esc(displayName(p))}</span><small>That's me</small></button>`).join('') + '<button data-id="new"><span>I’m not in the tree yet</span><small>Add me</small></button>';
+      const hits = [...G.people.values()].filter(p => !p.placeholder && isLiving(p) && nameMatches(p, q)).slice(0, 6);
+      $('#iList').innerHTML = hits.map(p => `<button data-id="${p.id}">${listName(p)}<small>That's me</small></button>`).join('') + '<button data-id="new"><span>I’m not in the tree yet</span><small>Add me</small></button>';
       document.querySelectorAll('#iList button').forEach(b => b.onclick = () => {
         finishIntro(true);
         if (b.dataset.id === 'new') addMeFlow(); else claimMe(b.dataset.id).then(() => { STATE.focus = STATE.viewer; render(); });

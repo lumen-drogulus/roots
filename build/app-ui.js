@@ -2,6 +2,32 @@
  * Pop-out person panel
  * ===================================================================== */
 const panel = $('#panel'), scrim = $('#scrim');
+/* Person lists (Find, "Which one is you?", "Already in the tree?") name people the way their cards do, so look-alikes
+   differ (Jonathon "Jonny" P. Ruzicka vs Jonathon "Jonny" S. Ruzicka), plus whose child they are: a relative knows
+   who your parents are, not your middle initial. */
+const shortName = q => (q.nicknames || '').split(',')[0].trim() || q.first || '';
+// "Jonny" alone when only one person goes by it; "Jonny S. Ruzicka" when two do (a father and son, say).
+function refName(q) {
+  const s = shortName(q), k = s.toLowerCase();
+  if (!k || ![...G.people.values()].some(o => o.id !== q.id && !o.placeholder && shortName(o).toLowerCase() === k)) return s;
+  return [s, q.middle ? q.middle.trim()[0] + '.' : '', q.last].filter(Boolean).join(' ');
+}
+const andList = a => a.length <= 2 ? a.join(' and ') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+function whoLine(p) {
+  const named = ids => ids.map(P).filter(q => q && !q.placeholder).map(refName).filter(Boolean);
+  const pars = named(parentsOf(p.id));
+  if (pars.length) return 'Child of ' + andList(pars);
+  const kids = named(childrenOf(p.id));
+  if (kids.length) return 'Parent of ' + (kids.length > 3 ? kids.slice(0, 2).join(', ') + ' and ' + (kids.length - 2) + ' more' : andList(kids));
+  const pts = named(partnersOf(p.id).map(x => x.id));
+  return pts.length ? 'Partner of ' + andList(pts) : '';
+}
+// Typing "Jonny", "Debby" or a maiden name finds the person, not only first and last names.
+function nameMatches(p, q) {
+  if (!q) return true;
+  return [cardName(p), displayName(p), p.middle, p.nicknames, p.birth, p.birthSurname, ...(p.married || [])].some(x => (x || '').toLowerCase().includes(q));
+}
+const listName = p => `<span class="who">${esc(cardName(p))}<em>${esc(whoLine(p))}</em></span>`;
 function openPanel(html) { panel.innerHTML = html; panel.classList.add('on'); if (innerWidth <= 700) scrim.classList.add('on'); }
 function closePanel() { panel.classList.remove('on'); scrim.classList.remove('on'); formDirty = false; currentSave = null; if (STATE.selected) { STATE.selected = null; refreshCards(); } }
 let formDirty = false, currentSave = null, sessionAdded = [], saving = false;
@@ -311,7 +337,7 @@ function wireDupCheck(onPick) {
     if (f.length < 2) { box.innerHTML = ''; return; }
     const hits = [...G.people.values()].filter(p => !p.placeholder && norm(p.first).startsWith(f) &&
       (!l || [p.last, p.birth, p.birthSurname, ...(p.married || [])].some(x => norm(x) === l))).slice(0, 3);
-    box.innerHTML = hits.length ? `<span>Already in the tree?</span>` + hits.map(p => `<button type="button" data-id="${p.id}">${esc(displayName(p))}<small>${esc([relation(p.id), years(p)].filter(Boolean).join(' · '))}</small></button>`).join('') : '';
+    box.innerHTML = hits.length ? `<span>Already in the tree?</span>` + hits.map(p => `<button type="button" data-id="${p.id}">${esc(cardName(p))}<small>${esc([relation(p.id) || whoLine(p), years(p)].filter(Boolean).join(' · '))}</small></button>`).join('') : '';
     box.querySelectorAll('button').forEach(b => b.onclick = () => onPick(b.dataset.id));
   };
   first.addEventListener('input', check); if (last) last.addEventListener('input', check);
@@ -639,8 +665,8 @@ function pickPerson(title, sub, onPick, filter = () => true) {
   $('#pClose').onclick = closePanel;
   const list = () => {
     const q = $('#qName').value.toLowerCase().trim();
-    const hits = [...G.people.values()].filter(p => !p.placeholder && filter(p) && (!q || displayName(p).toLowerCase().includes(q) || (p.birth || '').toLowerCase().includes(q) || (p.nicknames || '').toLowerCase().includes(q) || (p.married || []).some(m => m.toLowerCase().includes(q)))).slice(0, 40);
-    $('#qList').innerHTML = hits.map(p => `<button data-id="${p.id}"><span>${esc(displayName(p))}</span><small>${esc([relation(p.id), years(p)].filter(Boolean).join(' · '))}</small></button>`).join('') || '<p class="hint">Nobody by that name yet.</p>';
+    const hits = [...G.people.values()].filter(p => !p.placeholder && filter(p) && nameMatches(p, q)).slice(0, 40);
+    $('#qList').innerHTML = hits.map(p => `<button data-id="${p.id}">${listName(p)}<small>${esc([relation(p.id), years(p)].filter(Boolean).join(' · '))}</small></button>`).join('') || '<p class="hint">Nobody by that name yet.</p>';
     document.querySelectorAll('#qList button').forEach(b => b.onclick = () => onPick(b.dataset.id));
   };
   $('#qName').oninput = list; list(); setTimeout(() => $('#qName').focus(), 50);

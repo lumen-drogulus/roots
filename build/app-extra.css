@@ -56,3 +56,9 @@ button:disabled { opacity: .55; cursor: progress; }
 .more { position: absolute; min-width: 28px; height: 20px; padding: 0 7px; border-radius: 10px; border: 0; background: var(--ink); color: #FFFDF9; font: 600 11px/20px Jost, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer; z-index: 3; box-shadow: 0 1px 3px rgba(23, 36, 30, .25); }
 .more:hover { background: #2C3E35; }
 .more:focus-visible { outline: 2px solid var(--gilt); outline-offset: 2px; }
+
+/* person lists: the card's name, then whose child they are, so look-alikes can be told apart */
+.pick .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pick .who em { font-style: normal; font-size: 13px; color: var(--ink-soft); }
+.pick .who em:empty { display: none; }
+.pick button { align-items: center; }
