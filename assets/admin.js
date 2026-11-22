@@ -16,14 +16,36 @@ const esc = s => esc0(s).replace(/ \[pending\]/g, ' <span class="new">new</span>
 let toastT;
 function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 3200); }
 
+// The server handles one change at a time and waits up to 25 seconds for its turn, so a slow request can hold the
+// next one up. Give every call a hard limit and a plain message instead of a page that just sits there.
+const API_TIMEOUT = 45000;
+const KEY_REJECTED = 'Admin key not accepted.';
 async function api(action, body = {}) {
-  let res;
-  try { res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, key: KEY, ...body }) }); }
-  catch (e) { throw new Error("Couldn't reach the tree. Check your connection."); }
-  const json = await res.json();
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl && setTimeout(() => ctl.abort(), API_TIMEOUT);
+  let res, json;
+  try {
+    res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, key: KEY, ...body }), signal: ctl ? ctl.signal : undefined });
+    json = await res.json();
+  } catch (e) {
+    throw new Error(e && e.name === 'AbortError' ? "The tree didn't answer in time. Wait a minute, then try again." : "Couldn't reach the tree. Check your connection.");
+  } finally { clearTimeout(timer); }
   if (!json.ok) throw new Error(json.error || 'Something went wrong.');
   return json;
 }
+
+// Shows a button as working ("Approving…") until the call finishes, and says so if it's taking a while.
+async function working(btn, label, run) {
+  const old = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = label; btn.disabled = true; }
+  const slow = setTimeout(() => toast('Still working. The server can take a moment.'), 6000);
+  // On success the caller redraws (or hides) the button; on failure it comes back so you can try again.
+  try { return await run(); }
+  catch (err) { if (btn && btn.isConnected) { btn.textContent = old; btn.disabled = false; } throw err; }
+  finally { clearTimeout(slow); }
+}
+const retryBox = (msg, again) => { const p = document.createElement('p'); p.className = 'err'; p.textContent = msg + ' ';
+  const b = document.createElement('button'); b.className = 'btn'; b.textContent = 'Try again'; b.onclick = again; p.appendChild(b); return p; };
 
 /* ---------- dates ---------- */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -89,12 +111,18 @@ async function unlock(key) {
   $('#gate').hidden = true; $('#app').hidden = false; $('#actions').hidden = false;
   showQueue(q);
 }
+function gateError(err) {
+  $('#gateErr').textContent = err.message === KEY_REJECTED ? "That key didn't work. Copy it again from the Apps Script log (run showAdminKey)." : err.message;
+  $('#gateErr').hidden = false;
+}
 $('#gateForm').onsubmit = async e => {
   e.preventDefault();
-  const k = $('#keyInput').value.trim();
+  // An empty box retries with the key this browser already saved (kept when the server was only busy).
+  const k = $('#keyInput').value.trim() || store.get('roots_admin_key') || '';
+  if (!k) return;
   $('#gateErr').hidden = true;
-  try { await unlock(k); }
-  catch (err) { KEY = ''; $('#gateErr').textContent = err.message === 'Admin key not accepted.' ? "That key didn't work. Copy it again from the Apps Script log (run showAdminKey)." : err.message; $('#gateErr').hidden = false; }
+  try { await working($('#gateForm button[type="submit"]'), 'Unlocking…', () => unlock(k)); }
+  catch (err) { KEY = ''; if (err.message === KEY_REJECTED) store.del('roots_admin_key'); gateError(err); }
 };
 $('#btnLock').onclick = () => { store.del('roots_admin_key'); location.reload(); };
 
@@ -117,7 +145,8 @@ $('#btnPause').onclick = async () => {
 
 /* ---------- queue ---------- */
 async function loadQueue() {
-  try { const [q] = await Promise.all([api('admin_queue'), loadTree()]); showQueue(q); } catch (err) { $('#queue').innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+  try { const [q] = await Promise.all([api('admin_queue'), loadTree()]); showQueue(q); }
+  catch (err) { $('#queue').replaceChildren(retryBox(err.message, loadQueue)); }
 }
 function describe(it) {
   const r = it.row;
@@ -171,22 +200,23 @@ function showQueue(q) {
   }).join('');
   document.querySelectorAll('.batch').forEach(el => {
     const b = batches[+el.dataset.b];
-    el.querySelectorAll('[data-all]').forEach(btn => btn.onclick = () => decide(el, b.items.map(it => ({ kind: it.kind, id: it.row.id })), btn.dataset.all));
+    el.querySelectorAll('[data-all]').forEach(btn => btn.onclick = () => decide(el, b.items.map(it => ({ kind: it.kind, id: it.row.id })), btn.dataset.all, btn));
     el.querySelectorAll('.item').forEach(row => {
       const it = b.items[+row.dataset.i];
       row.querySelectorAll('[data-act]').forEach(btn => btn.onclick = () => {
         if (btn.dataset.act === 'edit') return editPerson(row, it);
-        decide(el, [{ kind: it.kind, id: it.row.id }], btn.dataset.act);
+        decide(el, [{ kind: it.kind, id: it.row.id }], btn.dataset.act, btn);
       });
       row.querySelectorAll('[data-merge]').forEach(btn => btn.onclick = () => mergeInto(btn.dataset.merge, it.row.id, it.row.first_name));
     });
   });
 }
-async function decide(batchEl, items, act) {
+async function decide(batchEl, items, act, btn) {
   batchEl.querySelectorAll('button').forEach(b => { b.disabled = true; });
   let res;
-  try { res = await api(act === 'approve' ? 'admin_approve' : 'admin_reject', { items }); }
+  try { res = await working(btn, act === 'approve' ? 'Approving…' : 'Rejecting…', () => api(act === 'approve' ? 'admin_approve' : 'admin_reject', { items })); }
   catch (err) { toast(err.message); batchEl.querySelectorAll('button').forEach(b => { b.disabled = false; }); return; }
+  // Says what happened before the list refreshes, so a slow refresh can't hide that the click worked.
   const errs = res.errors || [];
   if (errs.length) toast(errs.map(e => e.error[0].toUpperCase() + e.error.slice(1)).join('. ') + '.');
   else toast(act === 'approve' ? (items.length > 1 ? `Approved ${items.length}.` : 'Approved.') : (items.length > 1 ? `Rejected ${items.length}.` : 'Rejected.'));
@@ -302,14 +332,22 @@ function showLinks(row, p) {
 }
 
 /* ---------- start ---------- */
-if (KEY) unlock(KEY).catch(() => { KEY = ''; store.del('roots_admin_key'); $('#gate').hidden = false; });
+// Forget the saved key only when the server rejects it. A busy or slow server keeps it, and Unlock retries.
+if (KEY) {
+  $('#gate').hidden = false;
+  working($('#gateForm button[type="submit"]'), 'Unlocking…', () => unlock(KEY)).catch(err => {
+    KEY = '';
+    if (err.message === KEY_REJECTED) { store.del('roots_admin_key'); gateError(err); return; }
+    gateError(new Error(err.message + ' Your key is still saved; tap Unlock when ready.'));
+  });
+}
 
 /* ---- Stay current. GitHub Pages lets browsers keep every file for about 10 minutes, so right after a deploy a
  * phone can run yesterday's page. On load (and when the page comes back to the front) ask for version.json, which
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = 'c388b53510';
+  const BUILD = '355abb614c';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;
