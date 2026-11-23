@@ -253,3 +253,5 @@ body.wheelmode .levelmenu { display: none; }
 @media (max-width: 640px) { .toast { bottom: 100px; max-width: calc(100% - 32px); } }
 .howto span b { display: inline; font-weight: 600; color: var(--ink); }
 .howto a { color: var(--ink); text-decoration-color: var(--gilt); text-underline-offset: 3px; }
+.builtby .ver { font-variant-numeric: tabular-nums; opacity: .8; }
+@media (max-width: 400px) { .builtby svg { display: none; } .builtby { gap: 6px; } }

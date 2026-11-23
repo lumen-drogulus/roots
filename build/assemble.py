@@ -29,6 +29,10 @@ body = rep(body, '<div class="scrim" id="scrim"></div>', '''<div class="state" i
 <div class="mebar" id="meBar" hidden><span>Are you on the tree?</span><button class="primary" id="meYes">Find me or add me</button><button class="iconbtn" id="meNo">Not now</button></div>
 
 <div class="scrim" id="scrim"></div>''')
+# Version number (Jonny, 2026-11-22): 1.0 was the launch (d58d1bb, 2026-11-20); every update since adds .01.
+# Bump build/VERSION by one with each deploy. Shown after "Built by", and in version.json.
+VERSION = open('build/VERSION').read().strip()
+body = rep(body, '<span>Built by Jonny Ruzicka</span>', f'<span>Built by Jonny Ruzicka</span><span class="ver" title="Roots version">v{VERSION}</span>')
 # Review after saving (2026-11-22): what was just sent, laid out to read, with Edit. Sits above the buttons.
 body = rep(body, '''    <div class="actions" style="justify-content:center">
       <button class="primary" id="thanksBack">''', '''    <div class="review" id="thanksReview" hidden></div>
@@ -392,7 +396,7 @@ BUILD = hx.hexdigest()[:10]
 app += '\n' + fresh.replace('__BUILD__', BUILD)
 open('assets/app.js', 'w').write(app)
 open('assets/admin.js', 'w').write(admin_js + '\n' + fresh.replace('__BUILD__', BUILD))
-open('version.json', 'w').write('{"v": "%s"}\n' % BUILD)
+open('version.json', 'w').write('{"v": "%s", "version": "%s"}\n' % (BUILD, VERSION))
 # Asset links carry the build id, so a refreshed page can't pair new HTML with old script.
 stamp = lambda html: re.sub(r'(href|src)="((?:assets/(?:app|admin)\.(?:css|js))|config\.js)(?:\?v=\w+)?"', lambda m: '%s="%s?v=%s"' % (m.group(1), m.group(2), BUILD), html)
 for page in ('index.html', 'admin.html'):
