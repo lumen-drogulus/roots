@@ -5,26 +5,35 @@
  * share sized by how many descendants they have. Built only from what the page already has, so privacy is the
  * server's, as everywhere else.
  * ===================================================================== */
+// Tree, Wheel, or Photos (2026-11-23). The device remembers Tree or Wheel; Photos opens on the tree next time.
 STATE.view = store.get('roots_view') === 'wheel' ? 'wheel' : 'tree';
 const wheelEl = $('#wheel');
 const renderTree = render;
 // One render for both views: everything that moves the center (Center, Back to you, a save) lands here.
-render = function (opts = {}) { return STATE.view === 'wheel' ? renderWheel() : renderTree(opts); };
+render = function (opts = {}) { return STATE.view === 'wheel' ? renderWheel() : STATE.view === 'photos' ? renderPhotosPage() : renderTree(opts); };
 
 function setView(v) {
   if (v === STATE.view) return;
-  STATE.view = v; store.set('roots_view', v);
+  const from = STATE.view;
+  STATE.view = v; if (v !== 'photos') store.set('roots_view', v);
   document.body.classList.toggle('wheelmode', v === 'wheel');
+  document.body.classList.toggle('photomode', v === 'photos');
   $('#btnViewTree').setAttribute('aria-pressed', v === 'tree');
   $('#btnViewWheel').setAttribute('aria-pressed', v === 'wheel');
+  $('#btnViewPhotos').setAttribute('aria-pressed', v === 'photos');
   wheelEl.hidden = v !== 'wheel';
-  if (v === 'tree') { clearTree(); renderTree({ camera: 'instant', grow: true }); } else renderWheel();
+  photosEl.hidden = v !== 'photos';
+  if (v === 'tree') { clearTree(); renderTree({ camera: 'instant', grow: true }); }
+  else if (v === 'wheel') renderWheel();
+  else { if (from === 'tree') clearTree(); renderPhotosPage(true); }
 }
 $('#btnViewTree').onclick = () => setView('tree');
 $('#btnViewWheel').onclick = () => setView('wheel');
+$('#btnViewPhotos').onclick = () => setView('photos');
 document.body.classList.toggle('wheelmode', STATE.view === 'wheel');
 $('#btnViewTree').setAttribute('aria-pressed', STATE.view === 'tree');
 $('#btnViewWheel').setAttribute('aria-pressed', STATE.view === 'wheel');
+$('#btnViewPhotos').setAttribute('aria-pressed', 'false');
 wheelEl.hidden = STATE.view !== 'wheel';
 
 /* Which two people fill someone's parent spots: birth parents first, in the tree's order. An adoptive parent (then

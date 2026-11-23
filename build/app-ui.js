@@ -162,7 +162,7 @@ function openPerson(id) {
     `<div class="owrow" data-tbrow><span>${w.text}</span><button class="nbtn" data-tb="${i}">Take back</button></div>`).join('')}</div>`;
   if (!p.placeholder) body += photoSectionHTML(id);
   if (!p.placeholder && (p.addedBy || p.source) && !p.pending) body += `<p class="prov">${[p.addedBy ? 'Added by ' + esc(p.addedBy) : '', p.source ? 'Source: ' + esc(p.source) : ''].filter(Boolean).join(' · ')}</p>`;
-  const isFocus = id === STATE.focus;
+  const isFocus = id === STATE.focus && STATE.view !== 'photos';
   const canClaim = !STATE.viewer && !p.placeholder && living;
   openPanel(`
     <div class="head"><div class="av"${living ? '' : ' style="background:#F1E7CF;color:#7A5D1E"'}>${initials(p)}</div>
@@ -172,7 +172,7 @@ function openPerson(id) {
     <div class="foot">
       <button class="primary" id="pAdd">Add a relative</button>
       <button class="iconbtn" id="pEdit">${p.placeholder ? 'Fill in' : 'Edit'}</button>
-      ${isFocus ? '' : `<button class="iconbtn" id="pCenter">${STATE.view === 'wheel' ? `Put ${esc(p.placeholder ? 'them' : p.first)} in the middle` : `Center on ${esc(p.placeholder ? 'them' : p.first)}`}</button>`}
+      ${isFocus ? '' : `<button class="iconbtn" id="pCenter">${STATE.view === 'wheel' ? `Put ${esc(p.placeholder ? 'them' : p.first)} in the middle` : STATE.view === 'photos' ? `See ${esc(p.placeholder ? 'them' : p.first)} on the tree` : `Center on ${esc(p.placeholder ? 'them' : p.first)}`}</button>`}
       ${p.pending ? '<button class="iconbtn" id="pTakeBack">Take back</button>' : ''}
       ${canClaim ? '<button class="iconbtn" id="pMe">This is me</button>' : ''}
     </div>`);
@@ -186,7 +186,7 @@ function openPerson(id) {
     confirmInPlace($('.ownwork[data-tbrow] span'), `Take back ${esc(p.placeholder ? 'this unknown person' : p.first || 'this person')}${links ? ` and the link${links > 1 ? 's' : ''} you added with them` : ''}? ${OWNER_NAME} won't see ${links ? 'them' : 'it'}.`,
       () => takeBack([id], p.placeholder ? 'Taken back.' : `${p.first || 'They'} is taken back.`, neighborOf(id)));
   };
-  if (!isFocus) $('#pCenter').onclick = () => { closePanel(); STATE.focus = id; render(); };
+  if (!isFocus) $('#pCenter').onclick = () => { closePanel(); STATE.focus = id; if (STATE.view === 'photos') setView('tree'); else render(); };
   $('#pAdd').onclick = () => openAdd(id);
   if ($('#pEdit')) $('#pEdit').onclick = () => openEdit(id);
   if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);

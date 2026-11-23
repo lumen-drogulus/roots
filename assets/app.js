@@ -1164,7 +1164,7 @@ function openPerson(id) {
     `<div class="owrow" data-tbrow><span>${w.text}</span><button class="nbtn" data-tb="${i}">Take back</button></div>`).join('')}</div>`;
   if (!p.placeholder) body += photoSectionHTML(id);
   if (!p.placeholder && (p.addedBy || p.source) && !p.pending) body += `<p class="prov">${[p.addedBy ? 'Added by ' + esc(p.addedBy) : '', p.source ? 'Source: ' + esc(p.source) : ''].filter(Boolean).join(' · ')}</p>`;
-  const isFocus = id === STATE.focus;
+  const isFocus = id === STATE.focus && STATE.view !== 'photos';
   const canClaim = !STATE.viewer && !p.placeholder && living;
   openPanel(`
     <div class="head"><div class="av"${living ? '' : ' style="background:#F1E7CF;color:#7A5D1E"'}>${initials(p)}</div>
@@ -1174,7 +1174,7 @@ function openPerson(id) {
     <div class="foot">
       <button class="primary" id="pAdd">Add a relative</button>
       <button class="iconbtn" id="pEdit">${p.placeholder ? 'Fill in' : 'Edit'}</button>
-      ${isFocus ? '' : `<button class="iconbtn" id="pCenter">${STATE.view === 'wheel' ? `Put ${esc(p.placeholder ? 'them' : p.first)} in the middle` : `Center on ${esc(p.placeholder ? 'them' : p.first)}`}</button>`}
+      ${isFocus ? '' : `<button class="iconbtn" id="pCenter">${STATE.view === 'wheel' ? `Put ${esc(p.placeholder ? 'them' : p.first)} in the middle` : STATE.view === 'photos' ? `See ${esc(p.placeholder ? 'them' : p.first)} on the tree` : `Center on ${esc(p.placeholder ? 'them' : p.first)}`}</button>`}
       ${p.pending ? '<button class="iconbtn" id="pTakeBack">Take back</button>' : ''}
       ${canClaim ? '<button class="iconbtn" id="pMe">This is me</button>' : ''}
     </div>`);
@@ -1188,7 +1188,7 @@ function openPerson(id) {
     confirmInPlace($('.ownwork[data-tbrow] span'), `Take back ${esc(p.placeholder ? 'this unknown person' : p.first || 'this person')}${links ? ` and the link${links > 1 ? 's' : ''} you added with them` : ''}? ${OWNER_NAME} won't see ${links ? 'them' : 'it'}.`,
       () => takeBack([id], p.placeholder ? 'Taken back.' : `${p.first || 'They'} is taken back.`, neighborOf(id)));
   };
-  if (!isFocus) $('#pCenter').onclick = () => { closePanel(); STATE.focus = id; render(); };
+  if (!isFocus) $('#pCenter').onclick = () => { closePanel(); STATE.focus = id; if (STATE.view === 'photos') setView('tree'); else render(); };
   $('#pAdd').onclick = () => openAdd(id);
   if ($('#pEdit')) $('#pEdit').onclick = () => openEdit(id);
   if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);
@@ -2077,18 +2077,25 @@ viewer.className = 'viewer'; viewer.id = 'viewer'; viewer.hidden = true;
 viewer.setAttribute('role', 'dialog'); viewer.setAttribute('aria-modal', 'true'); viewer.setAttribute('aria-label', 'Photo');
 document.body.appendChild(viewer);
 let VW = null;
-function openViewer(personId, i) {
-  VW = { from: personId, list: PHOTOS.get(personId) || [], i };
+function openViewer(personId, i) { openViewerList(() => PHOTOS.get(personId) || [], i, personId); }
+/* listFn rebuilds the list after a reload (a new tag, a take back), so the viewer stays on the same photo. */
+function openViewerList(listFn, i, from = null) {
+  VW = { from, listFn, list: listFn(), i };
   if (!VW.list.length) return;
   viewer.hidden = false; document.body.classList.add('viewing'); renderViewer();
+}
+/* Everyone in a photo: its confirmed tags, plus this device's own unconfirmed ones. */
+function photoTagList(f) {
+  const people = f.tags.filter(pid => G.people.has(pid)).map(pid => ({ pid, mine: !!f.pending }));
+  (f.myTags || []).forEach(t => { if (G.people.has(t.person_id) && !people.some(x => x.pid === t.person_id)) people.push({ pid: t.person_id, mine: true }); });
+  return people;
 }
 function closeViewer() { viewer.hidden = true; document.body.classList.remove('viewing'); VW = null; }
 function viewerStep(d) { if (!VW || VW.list.length < 2) return; VW.i = (VW.i + d + VW.list.length) % VW.list.length; renderViewer(); }
 function renderViewer() {
   const f = VW.list[VW.i], n = VW.list.length, doc = f.kind === 'document';
   const big = f.pending ? thumbSrc(f) : photoURL(f.file_id, 2000);
-  const people = f.tags.filter(pid => G.people.has(pid)).map(pid => ({ pid, mine: f.pending }));
-  (f.myTags || []).forEach(t => { if (G.people.has(t.person_id) && !people.some(x => x.pid === t.person_id)) people.push({ pid: t.person_id, mine: true }); });
+  const people = photoTagList(f);
   const meta = [f.date_taken ? fuzzyLong(f.date_taken) : '', f.place || ''].filter(Boolean).join(' · ');
   const open = f.pending ? '' : isPdf(f)
     ? `<a class="vlink" href="https://drive.google.com/file/d/${encodeURIComponent(f.file_id)}/view" target="_blank" rel="noopener">Open the full document</a>`
@@ -2106,7 +2113,7 @@ function renderViewer() {
       ${meta ? `<p class="vmeta">${esc(meta)}</p>` : ''}
       ${open}
       <div class="vpeople"><span class="lab">${doc ? 'About' : 'In this photo'}</span>
-        ${people.map(x => `<button class="chip${x.mine && !f.pending ? ' pend' : ''}" data-goto-person="${esc(x.pid)}">${esc(cardName(P(x.pid)))}${x.mine && !f.pending ? ' <em>unconfirmed</em>' : ''}</button>`).join('') || '<span class="muted">Nobody tagged yet.</span>'}
+        ${people.map(x => `<button class="chip${x.mine && !f.pending ? ' pend' : ''}" data-goto-person="${esc(x.pid)}">${esc(cardName(P(x.pid)))}${relPhrase(x.pid) ? ` <span class="crel">${esc(relPhrase(x.pid))}</span>` : ''}${x.mine && !f.pending ? ' <em>unconfirmed</em>' : ''}</button>`).join('') || '<span class="muted">Nobody tagged yet.</span>'}
       </div>
       <div class="vtag" id="vTagBox" hidden><input id="vTagQ" placeholder="Start typing a name" autocomplete="off" aria-label="Who to tag"><div class="pick" id="vTagList"></div></div>
       ${f.source || f.added_by ? `<p class="prov">${[f.added_by ? 'Added by ' + esc(f.added_by) : '', f.source ? 'Source: ' + esc(f.source) : ''].filter(Boolean).join(' · ')}</p>` : ''}
@@ -2123,7 +2130,7 @@ function renderViewer() {
     $('#vTbYes').onclick = async () => {
       $('#vTbYes').disabled = true;
       try { await api({ action: 'withdraw', ids: [f.id] }); } catch (err) { toast(err.message); renderViewer(); return; }
-      const from = VW.from; closeViewer(); toast('Taken back.'); await reload(); openPerson(from);
+      const from = VW.from; closeViewer(); toast('Taken back.'); await reload(); if (from && G.people.has(from)) openPerson(from);
     };
   };
   fillPendingThumbs(viewer);
@@ -2144,11 +2151,11 @@ async function sendTag(f, pid) {
   try { await api({ action: 'submit', items: [{ kind: 'tag', photo_id: f.id, person_id: pid }] }); }
   catch (err) { toast(err.message); openViewerTag(f); return; }
   toast(ADMIN_KEY ? `Tagged ${refName(P(pid))}.` : `Tagged ${refName(P(pid))}. It shows on their card once ${OWNER_NAME} confirms it; you see it now.`);
-  const from = VW.from, id = f.id;
+  const { from, listFn } = VW, id = f.id;
   await reload();
-  const list = PHOTOS.get(from) || [];
+  const list = listFn();
   const i = list.findIndex(x => x.id === id);
-  if (i >= 0 && !viewer.hidden) { VW = { from, list, i }; renderViewer(); }
+  if (i >= 0 && !viewer.hidden) { VW = { from, listFn, list, i }; renderViewer(); }
 }
 document.addEventListener('keydown', e => {
   if (viewer.hidden) return;
@@ -2326,8 +2333,101 @@ async function doUpload() {
   toast(ADMIN_KEY ? (done > 1 ? `Added ${done}.` : 'Added.')
     : `Sent${done > 1 ? ' ' + done : ''}. You'll see ${done > 1 ? 'them' : 'it'} now, marked Unconfirmed, until ${OWNER_NAME} confirms.`);
   await reload();
-  if (G.people.has(anchor)) openPerson(anchor);
+  if (STATE.view !== 'photos' && G.people.has(anchor)) openPerson(anchor);
 }
+
+/* =====================================================================
+ * All photos (Jonny, 2026-11-23): the Photos choice in the Tree / Wheel / Photos switch.
+ * Every photo and document the viewer may see (their own unconfirmed ones too), each with its caption, date and
+ * place, and everyone in it named with how they're related to the viewer and whose child they are, so an old group
+ * photo reads as a family, not a list of strangers. Grouped by decade taken, or newest added first; narrowed to
+ * one person, or to photos or documents. Page only: built from the same tree the API already sends.
+ * ===================================================================== */
+const photosEl = document.createElement('div');
+photosEl.id = 'photos'; photosEl.hidden = true;
+document.body.appendChild(photosEl);
+const PG = { who: null, kind: 'all', sort: 'taken' };
+function relPhrase(pid) {
+  const r = relation(pid);
+  if (!r) return '';
+  if (r === 'You') return 'you';
+  if (/^[A-Z][^ ]*'s /.test(r)) return r;   // "Kayla's child": already says whose
+  return 'your ' + r.charAt(0).toLowerCase() + r.slice(1);
+}
+function pgList() {
+  let list = [...PHOTO_BY_ID.values()].filter(f => photoTagList(f).length || f.pending || !f.tags.length);
+  if (PG.kind !== 'all') list = list.filter(f => (f.kind === 'document' ? 'document' : 'photo') === PG.kind);
+  if (PG.who) list = list.filter(f => photoTagList(f).some(x => x.pid === PG.who));
+  const yr = f => { const d = parseFuzzy(f.date_taken); return d ? d.y + (d.m || 0) / 13 : Infinity; };
+  return PG.sort === 'added'
+    ? list.sort((a, b) => String(b.submitted_at || '').localeCompare(String(a.submitted_at || '')))
+    : list.sort((a, b) => yr(a) - yr(b) || String(a.caption || '').localeCompare(String(b.caption || '')));
+}
+function pgPersonHTML(x) {
+  const q = P(x.pid), rel = relPhrase(x.pid), yrs = !isLiving(q) && (q.born || q.died) ? years(q) : '';
+  const sub = [whoLine(q), yrs].filter(Boolean).join(' · ');
+  return `<li><button class="pgname" data-goto-person="${esc(x.pid)}">${esc(cardName(q))}</button>${rel ? `<span class="pgrel">${esc(rel)}</span>` : ''}${x.mine && !x.ownPhoto ? '<em class="pgun">unconfirmed</em>' : ''}${sub ? `<small>${esc(sub)}</small>` : ''}</li>`;
+}
+function pgCardHTML(f, i) {
+  const doc = f.kind === 'document';
+  const people = photoTagList(f).map(x => ({ ...x, ownPhoto: !!f.pending }));
+  const meta = [f.date_taken ? fuzzyLong(f.date_taken) : '', f.place || ''].filter(Boolean).join(' · ');
+  const prov = [f.source ? 'From ' + esc(f.source) : '', f.added_by ? 'Added by ' + esc(f.added_by) : f.pending ? 'Added by you' : ''].filter(Boolean).join(' · ');
+  return `<article class="pgcard${f.pending ? ' pend' : ''}">
+    <button class="pgimg" data-pgi="${i}" aria-label="Open ${esc(f.caption || (doc ? 'document' : 'photo'))} full screen">${thumbHTML(f, 800)}${doc ? '<span class="dbadge">Document</span>' : ''}${f.pending ? '<span class="ptag">Unconfirmed</span>' : ''}</button>
+    <div class="pginfo">
+      <h3>${esc(f.caption || (doc ? 'Document' : 'Photo'))}</h3>
+      ${meta ? `<p class="vmeta">${esc(meta)}</p>` : ''}
+      ${f.pending ? `<p class="vmeta">Only you see this until ${OWNER_NAME} confirms it.</p>` : ''}
+      <div class="pgwho"><span class="lab">${doc ? 'About' : people.length === 1 ? 'Who you\'re seeing' : `Who you're seeing (${people.length})`}</span>
+        ${people.length ? `<ul>${people.map(pgPersonHTML).join('')}</ul>` : '<p class="muted">Nobody tagged yet. Open it and tap Tag someone if you know who this is.</p>'}</div>
+      ${prov ? `<p class="prov">${prov}</p>` : ''}
+    </div></article>`;
+}
+function photosTop() {
+  return Math.max(...[...document.querySelectorAll('.topbar, .banner, .mebar')].filter(el => !el.hidden && el.getClientRects().length && getComputedStyle(el).display !== 'none').map(el => el.getBoundingClientRect().bottom), 60);
+}
+function renderPhotosPage(toTop) {
+  if (STATE.view !== 'photos') return;
+  photosEl.style.paddingTop = (photosTop() + 12) + 'px';
+  const all = [...PHOTO_BY_ID.values()];
+  const nPhotos = all.filter(f => f.kind !== 'document').length, nDocs = all.length - nPhotos;
+  if (PG.who && !G.people.has(PG.who)) PG.who = null;
+  const list = pgList();
+  const count = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  let body = '';
+  if (!all.length) body = `<div class="pgempty"><p>No photos or documents yet.</p><p>Old photos, scans of certificates, letters and clippings all belong here. Tap <b>Add photos or documents</b>, pick someone who's in them, and they'll show here and on everyone's card who's tagged.</p></div>`;
+  else if (!list.length) body = `<div class="pgempty"><p>Nothing ${PG.who ? 'of ' + esc(refName(P(PG.who))) : ''} ${PG.kind === 'document' ? 'among the documents' : PG.kind === 'photo' ? 'among the photos' : ''} yet.</p></div>`;
+  else if (PG.sort === 'added') body = list.map((f, i) => pgCardHTML(f, i)).join('');
+  else {
+    let last = null;
+    list.forEach((f, i) => {
+      const d = parseFuzzy(f.date_taken), g = d ? Math.floor(d.y / 10) * 10 + 's' : 'Date not known';
+      if (g !== last) { body += `<h2 class="pgdec">${g}</h2>`; last = g; }
+      body += pgCardHTML(f, i);
+    });
+  }
+  photosEl.innerHTML = `<div class="pgwrap">
+    <div class="pghead"><div><h1>Photos &amp; documents</h1>
+      <p class="sub">${all.length ? `${[nPhotos && count(nPhotos, 'photo'), nDocs && count(nDocs, 'document')].filter(Boolean).join(' and ')} from the family. Tap one to see it full size, or a name to open their card.` : ''}</p></div>
+      <button class="primary" id="pgAdd">Add photos or documents</button></div>
+    ${all.length ? `<div class="pgfilters">
+      <div class="seg small" role="group" aria-label="Show">${[['all', 'All'], ['photo', 'Photos'], ['document', 'Documents']].map(([v, l]) => `<button data-kind="${v}" aria-pressed="${PG.kind === v}">${l}</button>`).join('')}</div>
+      ${PG.who ? `<span class="chip">Only ${esc(refName(P(PG.who)))}<button aria-label="Show everyone" id="pgWhoX">×</button></span>` : '<button class="chip" id="pgWho">Only one person…</button>'}
+      <label class="pgsort">Order <select id="pgSort"><option value="taken"${PG.sort === 'taken' ? ' selected' : ''}>When taken, oldest first</option><option value="added"${PG.sort === 'added' ? ' selected' : ''}>Newest added first</option></select></label>
+    </div>` : ''}
+    ${body}</div>`;
+  if (toTop) photosEl.scrollTop = 0;
+  $('#pgAdd').onclick = () => pickPerson('Add photos or documents', "Pick someone who's in them, or who they're about. You can tag more people on the next screen.", id => openUpload(id));
+  photosEl.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { PG.kind = b.dataset.kind; renderPhotosPage(); });
+  const w = $('#pgWho'); if (w) w.onclick = () => pickPerson('Photos of one person', 'Pick someone to see only the photos and documents they\'re in.', id => { PG.who = id; closePanel(); renderPhotosPage(true); }, p => (PHOTOS.get(p.id) || []).length > 0);
+  const wx = $('#pgWhoX'); if (wx) wx.onclick = () => { PG.who = null; renderPhotosPage(true); };
+  const so = $('#pgSort'); if (so) so.onchange = () => { PG.sort = so.value; renderPhotosPage(true); };
+  photosEl.querySelectorAll('[data-pgi]').forEach(b => b.onclick = () => openViewerList(pgList, +b.dataset.pgi));
+  photosEl.querySelectorAll('[data-goto-person]').forEach(b => b.onclick = () => openPerson(b.dataset.gotoPerson));
+  fillPendingThumbs(photosEl);
+}
+addEventListener('resize', () => { if (STATE.view === 'photos') photosEl.style.paddingTop = (photosTop() + 12) + 'px'; });
 
 /* =====================================================================
  * How much to show (2026-11-22): Open all became a menu with four levels, each adding to the one before.
@@ -2446,26 +2546,35 @@ $('#btnKey').onclick = openKey;
  * share sized by how many descendants they have. Built only from what the page already has, so privacy is the
  * server's, as everywhere else.
  * ===================================================================== */
+// Tree, Wheel, or Photos (2026-11-23). The device remembers Tree or Wheel; Photos opens on the tree next time.
 STATE.view = store.get('roots_view') === 'wheel' ? 'wheel' : 'tree';
 const wheelEl = $('#wheel');
 const renderTree = render;
 // One render for both views: everything that moves the center (Center, Back to you, a save) lands here.
-render = function (opts = {}) { return STATE.view === 'wheel' ? renderWheel() : renderTree(opts); };
+render = function (opts = {}) { return STATE.view === 'wheel' ? renderWheel() : STATE.view === 'photos' ? renderPhotosPage() : renderTree(opts); };
 
 function setView(v) {
   if (v === STATE.view) return;
-  STATE.view = v; store.set('roots_view', v);
+  const from = STATE.view;
+  STATE.view = v; if (v !== 'photos') store.set('roots_view', v);
   document.body.classList.toggle('wheelmode', v === 'wheel');
+  document.body.classList.toggle('photomode', v === 'photos');
   $('#btnViewTree').setAttribute('aria-pressed', v === 'tree');
   $('#btnViewWheel').setAttribute('aria-pressed', v === 'wheel');
+  $('#btnViewPhotos').setAttribute('aria-pressed', v === 'photos');
   wheelEl.hidden = v !== 'wheel';
-  if (v === 'tree') { clearTree(); renderTree({ camera: 'instant', grow: true }); } else renderWheel();
+  photosEl.hidden = v !== 'photos';
+  if (v === 'tree') { clearTree(); renderTree({ camera: 'instant', grow: true }); }
+  else if (v === 'wheel') renderWheel();
+  else { if (from === 'tree') clearTree(); renderPhotosPage(true); }
 }
 $('#btnViewTree').onclick = () => setView('tree');
 $('#btnViewWheel').onclick = () => setView('wheel');
+$('#btnViewPhotos').onclick = () => setView('photos');
 document.body.classList.toggle('wheelmode', STATE.view === 'wheel');
 $('#btnViewTree').setAttribute('aria-pressed', STATE.view === 'tree');
 $('#btnViewWheel').setAttribute('aria-pressed', STATE.view === 'wheel');
+$('#btnViewPhotos').setAttribute('aria-pressed', 'false');
 wheelEl.hidden = STATE.view !== 'wheel';
 
 /* Which two people fill someone's parent spots: birth parents first, in the tree's order. An adoptive parent (then
@@ -3043,7 +3152,7 @@ function openCompare(a, b, backTo) {
 /* "Show it on the tree": center where the two lines meet and fade everyone not on the path, until the next tap. */
 function showPathOnTree(r) {
   closePanel();
-  if (STATE.view === 'wheel') setView('tree');
+  if (STATE.view !== 'tree') setView('tree');
   STATE.path = new Set(pathPeople(r));
   STATE.focus = r.kind === 'blood' && r.l.da && r.l.db ? r.l.apex[0] : r.b;
   // Step up to the lowest level that draws the whole path; the next tap puts the level back the way it was.
@@ -3164,7 +3273,7 @@ function finishIntro(quiet) {
 var meBarOff = false;
 /* Phones show a short word under each top-bar icon (2026-11-22): the Guide told people to tap Key and Show, and phones
    hid those words. */
-[['btnViewTree', 'Tree'], ['btnViewWheel', 'Wheel'], ['btnSearch', 'Find'], ['btnAll', 'Show'], ['btnKey', 'Key'], ['btnHelp', 'Help'], ['btnSend', 'Send']]
+[['btnViewTree', 'Tree'], ['btnViewWheel', 'Wheel'], ['btnViewPhotos', 'Photos'], ['btnSearch', 'Find'], ['btnAll', 'Show'], ['btnKey', 'Key'], ['btnHelp', 'Help'], ['btnSend', 'Send']]
   .forEach(([id, t]) => { const b = $('#' + id); if (b) b.insertAdjacentHTML('beforeend', `<span class="plbl" aria-hidden="true">${t}</span>`); });
 /* Add someone (2026-11-22): adding was only reachable by tapping a card first, which the Guide never said. */
 document.body.insertAdjacentHTML('beforeend', `<button class="primary addfab" id="btnAddSomeone" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add someone</button>`);
@@ -3324,7 +3433,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '83369ee6b7';
+  const BUILD = 'dec43fc720';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

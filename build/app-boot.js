@@ -94,7 +94,7 @@ function finishIntro(quiet) {
 var meBarOff = false;
 /* Phones show a short word under each top-bar icon (2026-11-22): the Guide told people to tap Key and Show, and phones
    hid those words. */
-[['btnViewTree', 'Tree'], ['btnViewWheel', 'Wheel'], ['btnSearch', 'Find'], ['btnAll', 'Show'], ['btnKey', 'Key'], ['btnHelp', 'Help'], ['btnSend', 'Send']]
+[['btnViewTree', 'Tree'], ['btnViewWheel', 'Wheel'], ['btnViewPhotos', 'Photos'], ['btnSearch', 'Find'], ['btnAll', 'Show'], ['btnKey', 'Key'], ['btnHelp', 'Help'], ['btnSend', 'Send']]
   .forEach(([id, t]) => { const b = $('#' + id); if (b) b.insertAdjacentHTML('beforeend', `<span class="plbl" aria-hidden="true">${t}</span>`); });
 /* Add someone (2026-11-22): adding was only reachable by tapping a card first, which the Guide never said. */
 document.body.insertAdjacentHTML('beforeend', `<button class="primary addfab" id="btnAddSomeone" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add someone</button>`);

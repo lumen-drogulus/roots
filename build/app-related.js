@@ -327,7 +327,7 @@ function openCompare(a, b, backTo) {
 /* "Show it on the tree": center where the two lines meet and fade everyone not on the path, until the next tap. */
 function showPathOnTree(r) {
   closePanel();
-  if (STATE.view === 'wheel') setView('tree');
+  if (STATE.view !== 'tree') setView('tree');
   STATE.path = new Set(pathPeople(r));
   STATE.focus = r.kind === 'blood' && r.l.da && r.l.db ? r.l.apex[0] : r.b;
   // Step up to the lowest level that draws the whole path; the next tap puts the level back the way it was.

@@ -47,6 +47,7 @@ body = rep(body, '<span class="lbl">Show all</span>', '<span class="lbl">Close f
 body = rep(body, '  <button class="iconbtn" id="btnSearch"', '''  <div class="viewsw" role="group" aria-label="View">
     <button id="btnViewTree" aria-pressed="true" aria-label="Tree view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="4" rx="1.5"/><rect x="3" y="16" width="6" height="4" rx="1.5"/><rect x="15" y="16" width="6" height="4" rx="1.5"/><path d="M12 7v4M6 16v-3h12v3"/></svg><span class="lbl">Tree</span></button>
     <button id="btnViewWheel" aria-pressed="false" aria-label="Wheel view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="10"/><path d="M2 12h7M15 12h7"/></svg><span class="lbl">Wheel</span></button>
+    <button id="btnViewPhotos" aria-pressed="false" aria-label="All photos and documents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg><span class="lbl">Photos</span></button>
   </div>
   <button class="iconbtn" id="btnSearch"''')
 body = rep(body, '</main>\n', '</main>\n<div id="wheel" hidden></div>\n')
