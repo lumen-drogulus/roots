@@ -303,9 +303,15 @@ engine = rep(engine, "      if (e.partnerOf) off += CG - GAP;", "      if ((e.pa
 # used to catch cousins, so the couple read as split.
 engine = rep(engine, "    if (t.parents.length === 2) { pedPlace(t.parents[0], x - t.da, g + 1); pedPlace(t.parents[1], x + t.db, g + 1); }",
   "    if (t.parents.length === 2) { occupy(g + 1, x - t.da, x + t.db); pedPlace(t.parents[0], x - t.da, g + 1); pedPlace(t.parents[1], x + t.db, g + 1); }")
+# A former partner (together once, never married) doesn't make their children stepchildren, or them a step-parent
+# (2026-11-22: Sharon, Kayla's daughter with Caesar, read as Jonny's stepchild).
+engine = rep(engine, "  if (path === 'UP') return w('Stepfather', 'Stepmother', 'Step-parent');\n",
+  "  const ptSub = (x, y) => (partnersOf(x).find(z => z.id === y) || {}).sub;\n  if (path === 'UP' && ptSub(chain[0], id) !== 'former') return w('Stepfather', 'Stepmother', 'Step-parent');\n")
+engine = rep(engine, "  if (path === 'UPD' && !siblingsOf(v).some(x => x.id === id))", "  if (path === 'UPD' && ptSub(chain[0], chain[1]) !== 'former' && !siblingsOf(v).some(x => x.id === id))")
+engine = rep(engine, "  if (path === 'PD') return w('Stepson', 'Stepdaughter', 'Stepchild');", "  if (path === 'PD' && ptSub(v, chain[0]) !== 'former') return w('Stepson', 'Stepdaughter', 'Stepchild');")
 ui = open('build/app-ui.js').read()
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
-app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-boot.js').read()
+app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-related.js').read() + '\n' + open('build/app-boot.js').read()
 # Busy = a form or card is open: the freshness check waits rather than reload under someone's typing.
 app += "\nwindow.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || saving;\n"
 

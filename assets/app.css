@@ -326,3 +326,57 @@ body.wheelmode #stage, body.wheelmode #btnAll, body.wheelmode #btnZoomIn, body.w
 #wheel .htag { fill: var(--gilt-light); letter-spacing: .12em; font-weight: 500; text-anchor: middle; }
 #wheel .hnm { fill: #FFFDF9; font-weight: 500; text-anchor: middle; }
 #wheel .hln { fill: var(--bone); text-anchor: middle; }
+
+/* ---------- Gender on the form, How are we related? (2026-11-22) ---------- */
+.relbtn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border-radius: 16px; border: 1.5px solid rgba(169, 130, 47, .6); background: #FFF9EC; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.relbtn:hover { background: #FFF4DC; }
+.relbtn .ic { width: 36px; height: 36px; border-radius: 50%; background: var(--ink); color: var(--gilt-light); display: grid; place-items: center; flex: none; }
+.relbtn .ic svg, .relbtn > svg { width: 18px; height: 18px; flex: none; }
+.relbtn .tx { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.relbtn .tx b { font-weight: 500; font-size: 15.5px; }
+.relbtn .tx small { font-size: 13px; color: var(--ink-soft); }
+.panel .rhead { padding: 10px 12px; justify-content: space-between; }
+.rback { height: 40px; padding: 0 10px 0 4px; border: 0; background: transparent; display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 15px; color: var(--ink); cursor: pointer; border-radius: 20px; }
+.rback:hover { background: rgba(29, 43, 36, .06); }
+.rback svg { width: 18px; height: 18px; }
+.related { gap: 12px; }
+.related .kick { font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; font-weight: 500; color: var(--year); }
+.related .rh { font-family: var(--font-story); font-weight: 500; font-size: 25px; line-height: 1.18; margin: 0; }
+.related .rb { margin: 0; font-family: var(--font-story); font-size: 16.5px; line-height: 1.45; color: var(--ink-soft); }
+.rsteps { margin: 0; padding: 0 0 0 4px; list-style: none; counter-reset: st; display: flex; flex-direction: column; gap: 8px; font-family: var(--font-story); font-size: 16px; line-height: 1.4; }
+.rsteps li { counter-increment: st; display: flex; gap: 10px; }
+.rsteps li::before { content: counter(st); flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--paper); font: 500 12px/22px var(--font-ui); text-align: center; margin-top: 1px; }
+.rdiag { position: relative; margin: 10px auto 0; flex: none; }
+.rdiag svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.rdiag .gl { stroke: var(--gilt); stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.rdiag .il { stroke: var(--ink); stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.rdiag .pl { stroke: var(--ink); stroke-width: 1.6; fill: none; }
+.rdiag .pl.former { stroke-dasharray: 5 5; opacity: .45; }
+.rdiag .rg { fill: #FFFDF9; stroke: var(--ink); stroke-width: 1.5; }
+.rdiag .rg2 { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.rcard { position: absolute; width: 148px; height: 62px; box-sizing: border-box; padding: 6px 8px; border-radius: 13px; border: 1px solid rgba(29, 43, 36, .14); background: #FFFDF9; display: flex; align-items: center; gap: 8px; text-align: left; font: inherit; color: var(--ink); cursor: pointer; box-shadow: 0 2px 6px rgba(23, 36, 30, .06); }
+.rcard:hover { border-color: rgba(29, 43, 36, .35); }
+.rcard .av { width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 11.5px; font-weight: 500; background: #E7E4DA; }
+.rcard.dead .av { background: #F1E7CF; color: #7A5D1E; }
+.rcard.end { border: 2px solid var(--gilt); background: #FFFFFF; box-shadow: 0 0 0 5px rgba(169, 130, 47, .16), 0 8px 20px rgba(23, 36, 30, .12); }
+.rcard.end .av { background: var(--ink); color: #FFFDF9; }
+.rcard.shared { border: 1.5px solid rgba(169, 130, 47, .7); }
+.rcard.unk { border-style: dashed; background: rgba(255, 255, 255, .5); }
+.rcard .t { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rcard .n { font-size: 12px; font-weight: 500; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rcard .s { font-size: 11px; color: var(--ink-soft); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rcard .y { font-size: 10.5px; color: var(--year); line-height: 1.2; }
+.rtag, .rstep { position: absolute; font-family: var(--font-story); font-style: italic; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.rtag { width: 100px; text-align: center; }
+.rshared { align-self: center; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; font-weight: 500; color: var(--year); margin-top: -4px; }
+.rbtns { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.rbtns button { height: 46px; justify-content: center; font-size: 15px; }
+.rslot { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: #fff; border: 1px solid rgba(29, 43, 36, .16); }
+.rslot .av { width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: #FFFDF9; display: grid; place-items: center; font-size: 12.5px; font-weight: 500; flex: none; }
+.rslot .t { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rslot .t b { font-weight: 500; font-size: 15px; }
+.rslot .t small { font-size: 13px; color: var(--ink-soft); }
+.rswapw { display: flex; justify-content: center; margin: -4px 0; }
+body.pathmode .node.offpath > * { opacity: .25; transition: opacity .3s; }
+body.pathmode .node.onpath .card { box-shadow: 0 0 0 4px rgba(169, 130, 47, .35), 0 8px 20px rgba(23, 36, 30, .14); }
+body.pathmode #edges { opacity: .35; }

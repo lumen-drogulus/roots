@@ -157,6 +157,7 @@ function openPerson(id) {
       <span class="nbtns"><button class="nbtn yes" data-yes>Yes, link them</button><button class="nbtn" data-no>No</button></span></div>`;
   });
   if (twice) body += `<div class="twicebox">${ICON.rings}<span>Related twice: ${esc(p.first)} and ${esc(P(twice.partner).first)} both descend from ${esc(displayName(P(twice.ancestor)))}.</span></div>`;
+  body += relatedButtonHTML(id);
   if (p.pending) body += `<div class="ownwork" data-tbrow><span>You added ${esc(p.placeholder ? 'this unknown person' : p.first || 'this')}. ${OWNER_NAME} hasn't confirmed it yet, so only you can see it. Spot a mistake? <b>Edit</b> fixes it, <b>Take back</b> removes it.</span></div>`;
   const work = ownWork(id);
   if (work.length) body += `<div class="ownwork"><span class="owhead">Waiting for ${OWNER_NAME}. Only you see ${work.length > 1 ? 'these' : 'this'} until he confirms.</span>${work.map((w, i) =>
@@ -303,6 +304,8 @@ function fieldsHTML(p, livingV, opts = {}) {
     </div>
     ${noName ? `<label class="kid noname"><input type="checkbox" id="fNoName"${unk ? ' checked' : ''}><span>I don't know their name</span></label>
     <p class="hint" id="fNoNameHint"${unk ? '' : ' hidden'}>They'll show as Unknown. Add what you do know below, and anyone who knows the name can fill it in later.</p>` : ''}
+    <div class="field"><label for="fSex">Gender</label><select id="fSex">${[['', 'Not sure, or rather not say'], ['female', 'Female'], ['male', 'Male'], ['other', 'Other']].map(([v, t]) => `<option value="${v}"${(p.sex || '') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
+      <p class="hint">Lets the tree say mother or grandson instead of parent or grandchild. Private while they're living${opts.edit && isLiving(p) && !p.pending ? ', so it shows blank here even if someone already chose one' : ''}.</p></div>
     ${livingSeg(livingV)}
     <div class="row2"><div class="field"><label for="fBorn">Born</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1932, about 1932, May 14, 1932"></div>
       <div class="field"><label for="fDied">Died</label><input id="fDied" value="${esc(fuzzyToText(p.diedRaw))}" placeholder="Year or date"></div></div>
@@ -343,7 +346,7 @@ function watchForm(kind, anchor, extra = {}) {
 function clearDraft() { store.del('roots_draft'); }
 function fillForm(f) {
   const set = (id, v) => { const el = $('#' + id); if (el && v) el.value = v; };
-  set('fFirst', f.first); set('fMiddle', f.middle); set('fLast', f.last); set('fNick', f.nick); set('fBirthName', f.birthName);
+  set('fFirst', f.first); set('fMiddle', f.middle); set('fSex', f.sex); set('fLast', f.last); set('fNick', f.nick); set('fBirthName', f.birthName);
   const others = Array.isArray(f.otherNames) ? f.otherNames : (f.otherNames ? String(f.otherNames).split(',') : []);
   if ($('#fOtherList')) { $('#fOtherList').innerHTML = ''; others.forEach(v => addNameRow(v.trim(), false)); }
   if (f.birthName || others.length) showNames(); set('fBorn', f.born); set('fDied', f.died); set('fPlace', f.bornPlace); set('fNotes', f.notes); set('fSource', f.source);
@@ -358,8 +361,8 @@ function syncNoName() {
 function readForm() {
   const v = id => (($('#' + id) || {}).value || '').trim();
   const noName = !!($('#fNoName') && $('#fNoName').checked);
-  if (noName) return { noName, first: '', middle: '', last: '', nick: '', birthName: '', otherNames: [], born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
-  return { first: v('fFirst'), middle: v('fMiddle'), last: v('fLast'), nick: v('fNick'), birthName: v('fBirthName'), otherNames: [...document.querySelectorAll('.fOtherName')].map(x => x.value.trim()).filter(Boolean), born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
+  if (noName) return { noName, sex: v('fSex'), first: '', middle: '', last: '', nick: '', birthName: '', otherNames: [], born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
+  return { sex: v('fSex'), first: v('fFirst'), middle: v('fMiddle'), last: v('fLast'), nick: v('fNick'), birthName: v('fBirthName'), otherNames: [...document.querySelectorAll('.fOtherName')].map(x => x.value.trim()).filter(Boolean), born: v('fBorn'), died: v('fDied'), bornPlace: v('fPlace'), notes: v('fNotes'), source: v('fSource'), who: v('fWho'), living: segVal('fLiving') || 'unknown' };
 }
 function showNames() { const m = $('#fNamesMore'), b = $('#fNamesBtn'); if (m) m.hidden = false; if (b) b.hidden = true; }
 /* Wires the parts every person form shares: the living buttons, a death date flipping them to Passed away, the names reveal. */
@@ -387,6 +390,7 @@ function personData(f) {
   const d = { first_name: f.first || (f.last ? '' : 'Unknown'), living: f.living };
   if (f.middle) d.middle_name = f.middle;
   if (f.nick) d.nicknames = f.nick;
+  d.sex = f.sex || '';
   const n = namesToData(f.last, f.birthName, f.otherNames);
   if (n.birth_surname) d.birth_surname = n.birth_surname;
   if (n.married_names.length) d.married_names = n.married_names;
@@ -478,9 +482,9 @@ function openEdit(id, restore) {
     try {
       const n0 = namesFromPerson(b), was0 = namesToData(n0.last, n0.birthName, n0.otherNames), now0 = namesToData(f.last, f.birthName, f.otherNames);
       const was = { first_name: b.placeholder ? '' : b.first, middle_name: b.middle || '', nicknames: b.nicknames || '', birth_surname: was0.birth_surname, married_names: JSON.stringify(was0.married_names), living: lv,
-        birth_date: b.bornRaw || '', death_date: b.diedRaw || '', birth_place: b.bornPlace || '', notes: b.notes || '' };
+        birth_date: b.bornRaw || '', death_date: b.diedRaw || '', birth_place: b.bornPlace || '', notes: b.notes || '', sex: b.sex || '' };
       const now = { first_name: f.first, middle_name: f.middle, nicknames: f.nick, birth_surname: now0.birth_surname, married_names: JSON.stringify(now0.married_names), living: f.living, birth_date: toFuzzy(f.born, 'Born'),
-        death_date: toFuzzy(f.died, 'Died'), birth_place: f.bornPlace, notes: f.notes };
+        death_date: toFuzzy(f.died, 'Died'), birth_place: f.bornPlace, notes: f.notes, sex: f.sex || '' };
       if (f.noName && !b.placeholder) now.first_name = 'Unknown';
       changes = Object.keys(now).filter(k => now[k] !== was[k])
         .map(k => ({ kind: 'suggestion', target_id: id, field: k, value: k === 'married_names' ? JSON.parse(now[k]) : now[k], source: f.source }));
