@@ -25,9 +25,12 @@ const INTRO = [
     </ul>`,
   () => `
     <h1>Which one is you?</h1>
-    <p>Pick yourself so the tree knows where you fit and opens on you. You can skip this and do it later from your own card.</p>
-    <div class="field"><label for="iName">Your name</label><input id="iName" placeholder="Start typing" autocomplete="off"></div>
-    <div class="pick" id="iList"></div>`
+    <p>Find yourself so the tree knows where you fit and opens on you.</p>
+    <ol class="isteps"><li><b>Type your name</b> in the box. First or last name is enough.</li><li><b>Tap your name</b> in the list that appears.</li></ol>
+    <div class="field"><label for="iName">Your name</label><input id="iName" placeholder="Start typing your name" autocomplete="off" autocapitalize="words"></div>
+    <div class="pick" id="iList"></div>
+    <div class="iadd"><span>Not in the list?</span><button class="iconbtn" id="iAdd" type="button">Add myself</button></div>
+    <p class="hint warn" id="iGate" hidden></p>`
 ];
 let introSteps = [0, 1, 2], introStep = 0;
 function renderIntro() {
@@ -42,14 +45,32 @@ function renderIntro() {
   if (introStep > 0) $('#iBack').onclick = () => { introStep--; renderIntro(); };
   $('#iNext').onclick = () => { if (last) finishIntro(); else { introStep++; renderIntro(); } };
   if (step === 2) {
+    // "Which one is you?" (2026-11-22, Jonny): type, then tap yourself. Adding yourself is a button, not a list row,
+    // and it makes you search first: nothing typed asks you to type; matches showing asks "is one of these you?" once.
+    let hits = [], confirmNew = false;
+    const gate = msg => { $('#iGate').textContent = msg; $('#iGate').hidden = !msg; };
     const list = () => {
       const q = $('#iName').value.toLowerCase().trim();
-      const hits = [...G.people.values()].filter(p => !p.placeholder && isLiving(p) && nameMatches(p, q)).slice(0, 6);
-      $('#iList').innerHTML = hits.map(p => `<button data-id="${p.id}">${listName(p)}<small>That's me</small></button>`).join('') + '<button data-id="new"><span>I’m not in the tree yet</span><small>Add me</small></button>';
+      confirmNew = false; $('#iAdd').textContent = 'Add myself'; gate('');
+      hits = q ? [...G.people.values()].filter(p => !p.placeholder && isLiving(p) && nameMatches(p, q)).slice(0, 6) : [];
+      $('#iList').innerHTML = !q ? '<p class="hint">Names show up here as you type.</p>'
+        : hits.length ? hits.map(p => `<button data-id="${p.id}">${listName(p)}<small>That's me</small></button>`).join('')
+        : '<p class="hint">No one by that name yet. Try your last name or a nickname.</p>';
       document.querySelectorAll('#iList button').forEach(b => b.onclick = () => {
         finishIntro(true);
-        if (b.dataset.id === 'new') addMeFlow(); else claimMe(b.dataset.id).then(() => { STATE.focus = STATE.viewer; render(); });
+        claimMe(b.dataset.id).then(() => { STATE.focus = STATE.viewer; render(); });
       });
+    };
+    $('#iAdd').onclick = () => {
+      const typed = $('#iName').value.trim();
+      if (typed.length < 2) { gate("Type your name above first, so you don't end up in the tree twice."); $('#iName').focus(); return; }
+      if (hits.length && !confirmNew) {
+        confirmNew = true; $('#iAdd').textContent = 'None of these. Add myself';
+        gate('Is one of these you? Tap your name to pick it. If none of them are you, tap the button again.');
+        return;
+      }
+      finishIntro(true);
+      addMeFlow(typed);
     };
     $('#iName').oninput = list; list();
   }
@@ -75,10 +96,14 @@ function updateMeBar() {
 }
 $('#meYes').onclick = () => { $('#meBar').hidden = true; openIntro(2); };
 $('#meNo').onclick = () => { meBarOff = true; updateMeBar(); };
-function addMeFlow() {
-  if (!G.people.size) { openAdd(null, { self: true }); return; }
-  pickPerson("Who's your closest relative here?", "Pick a parent, sibling, partner or child who's already in the tree. You'll add yourself next to them.",
-    id => openAdd(id, { self: true, rel: 'child' }));
+// typed: the name searched on "Which one is you?", carried into the form so they don't type it twice.
+function addMeFlow(typed = '') {
+  const w = typed.trim().split(/\s+/).filter(Boolean).map(x => x[0].toUpperCase() + x.slice(1));
+  // Only a full name is carried over: one word could be a first or a last name.
+  const fields = w.length > 1 ? { first: w[0], last: w[w.length - 1], living: 'living' } : null;
+  const go = id => openAdd(id, fields ? { self: true, rel: 'child', fields } : { self: true, rel: 'child' });
+  if (!G.people.size) { go(null); return; }
+  pickPerson("Who's your closest relative here?", "Pick a parent, sibling, partner or child who's already in the tree. You'll add yourself next to them.", go);
 }
 $('#btnHelp').onclick = () => openIntro(1);
 $('#btnWhy').onclick = () => openIntro(0);

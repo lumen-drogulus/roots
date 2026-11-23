@@ -412,3 +412,10 @@ body.wheelmode .levelmenu { display: none; }
 .mebar button { font-size: 13.5px; white-space: nowrap; }
 .mebar .iconbtn { width: auto; padding: 0 14px; }
 @media (max-width: 520px) { .mebar { padding: 10px 12px; } .mebar span { flex: 1 1 100%; text-align: center; } }
+
+/* "Which one is you?": numbered steps, and Add myself as a button under the list (2026-11-22) */
+.isteps { margin: 0; padding-left: 22px; line-height: 1.55; }
+.isteps li + li { margin-top: 2px; }
+.iadd { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; color: var(--ink-soft); font-size: 14px; }
+.iadd .iconbtn { width: auto; padding: 0 16px; }
+#iList .hint { margin: 4px 2px; }
