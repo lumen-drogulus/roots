@@ -58,6 +58,50 @@ open('index.html', 'w').write(head + '<body>' + body + '<script src="config.js">
 engine = between(script, "/* =====================================================================\n * Graph", "/* =====================================================================\n * Pop-out person panel")
 keyjs = between(script, "/* ---- key: every symbol", "$('#btnKey').onclick = openKey;", inclusive_b=True)
 engine = rep(engine, "  data.rels.forEach(([t, a, b, sub, pend]) => {", "  data.rels.forEach(([t, a, b, sub, pend]) => {\n    if (!g.people.has(a) || !g.people.has(b)) return;")
+# Opening or folding a bud holds your place (Jonny, 2026-11-23, on his phone): it used to glide the camera back to
+# the centered person, so a bud tapped far out left you dragging back to see what opened. Now the card the bud hangs
+# from stays under your finger; the view slides only as far as needed to bring the new branch on screen, never so far
+# that card leaves it.
+engine = rep(engine, "el.addEventListener('click', e => { e.stopPropagation(); STATE.open.add(n.key); render({ grow: true }); });",
+  "el.addEventListener('click', e => { e.stopPropagation(); holdSpot(n.anchor, () => STATE.open.add(n.key)); });")
+engine = rep(engine, "f.addEventListener('click', e => { e.stopPropagation(); STATE.open.delete(key); render({ camera: false }); });",
+  "f.addEventListener('click', e => { e.stopPropagation(); holdSpot(n.id, () => STATE.open.delete(key), true); });")
+engine = rep(engine, "function stepCamera(now) {", """function holdSpot(anchorId, change, folding) {
+  const prev = currentLayout, before = prev && prev.nodes.get(anchorId);
+  const s = cam.moving ? cam.ts : cam.s, bx = cam.moving ? cam.tx : cam.x, by = cam.moving ? cam.ty : cam.y;
+  change();
+  render({ grow: true, camera: false });
+  const after = currentLayout.nodes.get(anchorId);
+  if (!before || !after) return;
+  let tx = bx + (before.x - after.x) * s, ty = by + (before.y - after.y) * s;
+  const vw = innerWidth, vh = innerHeight, top = (vw < 640 ? 64 : 60) + 16, pad = 16, bottom = vh - (vw < 640 ? 100 : 72);
+  if (!folding) {
+    // the newly shown cards: bring as many on screen as fits, the anchor card always stays on
+    let l = Infinity, r = -Infinity, t = Infinity, b = -Infinity;
+    for (const m of currentLayout.nodes.values()) {
+      if (prev.nodes.has(m.id)) continue;
+      const hw = (m.kind === 'bud' ? BUDW : (m.id === STATE.focus ? FW : CW)) / 2, hh = (m.kind === 'bud' ? 15 : CH / 2);
+      l = Math.min(l, m.x - hw); r = Math.max(r, m.x + hw); t = Math.min(t, m.y - hh); b = Math.max(b, m.y + hh);
+    }
+    if (l < Infinity) {
+      const fit = (lo, hi, vlo, vhi, a) => {
+        let d = 0;
+        if (hi - lo > vhi - vlo) d = (a < (lo + hi) / 2 ? vlo - lo : vhi - hi); // too big: keep the side the anchor is on
+        else if (lo < vlo) d = vlo - lo; else if (hi > vhi) d = vhi - hi;
+        return d;
+      };
+      const ax = tx + after.x * s, ay = ty + after.y * s, aw = (after.id === STATE.focus ? FW : CW) / 2 * s, ah = CH / 2 * s;
+      let dx = fit(tx + l * s, tx + r * s, pad, vw - pad, ax), dy = fit(ty + t * s, ty + b * s, top, bottom, ay);
+      dx = Math.min(Math.max(dx, pad + aw - ax), vw - pad - aw - ax);
+      dy = Math.min(Math.max(dy, top + ah - ay), bottom - ah - ay);
+      tx += dx; ty += dy;
+    }
+  }
+  if (reduceMotion) { Object.assign(cam, { x: tx, y: ty, s, tx, ty, ts: s, moving: false }); applyCam(); return; }
+  Object.assign(cam, { fx: cam.x, fy: cam.y, fs: cam.s, tx, ty, ts: s, t0: performance.now(), moving: true });
+  if (!anim.running) { anim.running = true; requestAnimationFrame(tick); }
+}
+function stepCamera(now) {""")
 engine = rep(engine, "const isLiving = p => !!p.living || (!p.died && !p.placeholder && !(p.born && +String(p.born).replace(/\\D/g, '') < new Date().getFullYear() - 110));",
              "const isLiving = p => !p.placeholder && !!p.living;")
 engine = rep(engine, "const STATE = { viewer: SAMPLE.viewer, focus: SAMPLE.viewer, open: new Set(), all: false, rootsBelow: true, selected: null };",
