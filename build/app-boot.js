@@ -6,12 +6,12 @@ const INTRO = [
     <svg viewBox="4 8 216 112" style="width:180px;height:auto" aria-hidden="true">${document.querySelector('.topbar .logo').innerHTML}</svg>
     <h1>Welcome to our family tree.</h1>
     <div class="why">
-      <p>When I was a kid, our family got together all the time. Card games at someone's house. Big reunions at the park. Christmas parties where one of us played Santa.</p>
-      <p>Over the years, the patriarchs and matriarchs who held us together passed on, and many of us lost touch.</p>
-      <p>Now I have a family of my own, an adult son and a daughter-in-law, and I want to bring back the family spirit I grew up with. This tree is where I'm starting: a detailed picture of who we are and how we're all connected.</p>
-      <p>It only grows if you help. Add the relatives you know, especially the ones we've lost, then send the link to every relative you can. Together we can build something beautiful.</p>
-      <p>Questions? Email me at <a href="mailto:jonathonpr@gmail.com">jonathonpr@gmail.com</a>.</p>
-      <p>Thank you for helping this tree grow. I hope it brings us back around the same table.</p>
+      <p>When I was a kid, our family was always together. Card games at someone's house. Reunions at the park. Christmas parties where one of us put on the Santa suit.</p>
+      <p>Then, one by one, the people who held us together were gone. Nobody decided to drift apart. We just stopped having a reason to be in the same room.</p>
+      <p>Now I have a family of my own, a grown son and a daughter-in-law, and I want them to have what I had. So I'm starting here, with a picture of who we are and how every one of us is connected.</p>
+      <p>I can't finish it alone. You know names I've never heard and stories nobody wrote down. Add the people you know, especially the ones we've lost, and send this link to every relative you can find.</p>
+      <p>Every name you add is someone remembered. I hope this brings us back around the same table.</p>
+      <p>Questions? Feedback? Need help? Email me at <a href="mailto:jonathonpr@gmail.com">jonathonpr@gmail.com</a>.</p>
     </div>
     <p class="sig">Jonny Ruzicka</p>`,
   () => `
