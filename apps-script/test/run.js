@@ -368,6 +368,41 @@ test('documents: PDFs accepted as documents; one tagging a living person is fami
   assert.ok(prev.preview && /^data:image/.test(prev.data_url), 'a PDF previews as Drive\'s picture of it');
 });
 
+test('photo details: a relative suggests, Jonny approves; the owner applies at once; own pending edits in place', () => {
+  const { t, key, ids } = setup();
+  const img = Buffer.from('x').toString('base64');
+  const up = t.post({ action: 'upload_photo', token: TOK_JONNY, key, image: img, mime: 'image/jpeg', tags: [ids['new:gpa']] });
+  // relative suggests a caption and date on an approved photo
+  let r = t.post({ action: 'submit', token: TOK_LINDA, items: [
+    { kind: 'suggestion', target_id: up.id, field: 'caption', value: 'Grandpa at the rail yard' },
+    { kind: 'suggestion', target_id: up.id, field: 'date_taken', value: 'about:1955' }] });
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.strictEqual(t.get({}).photos[0].caption, '', 'not public until approved');
+  assert.strictEqual(t.get({ token: TOK_LINDA }).own.suggestions.filter(x => x.target_id === up.id).length, 2);
+  const q = t.post({ action: 'admin_queue', key });
+  const items = q.batches.flatMap(b => b.items).filter(i => i.kind === 'suggestion');
+  assert.ok(items.every(i => /a photo with no caption/.test(i.target_label)), items.map(i => i.target_label).join());
+  t.post({ action: 'admin_approve', key, items: items.map(i => ({ kind: 'suggestion', id: i.row.id })) });
+  const ph = t.get({}).photos[0];
+  assert.strictEqual(ph.caption, 'Grandpa at the rail yard');
+  assert.strictEqual(ph.date_taken, 'about:1955');
+  // owner: applies at once, kind too
+  r = t.post({ action: 'submit', token: TOK_JONNY, key, items: [{ kind: 'suggestion', target_id: up.id, field: 'kind', value: 'document' }] });
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.strictEqual(t.get({}).photos[0].kind, 'document');
+  r = t.post({ action: 'submit', token: TOK_JONNY, key, items: [{ kind: 'suggestion', target_id: up.id, field: 'kind', value: 'painting' }] });
+  assert.strictEqual(r.ok, false);
+  // a relative's own pending upload: edit in place
+  const mine = t.post({ action: 'upload_photo', token: TOK_LINDA, image: img, mime: 'image/jpeg' });
+  r = t.post({ action: 'own_edit', token: TOK_LINDA, id: mine.id, data: { caption: 'Lake, 1985', date_taken: 'exact:1985', place: 'Big Bear' } });
+  assert.ok(r.ok, JSON.stringify(r));
+  const own = t.get({ token: TOK_LINDA }).own.photos.find(f => f.id === mine.id);
+  assert.strictEqual(own.caption, 'Lake, 1985'); assert.strictEqual(own.place, 'Big Bear');
+  // nobody else can edit it in place, nor suggest on it while pending
+  assert.strictEqual(t.post({ action: 'own_edit', token: TOK_STRANGER, id: mine.id, data: { caption: 'x' } }).ok, false);
+  assert.strictEqual(t.post({ action: 'submit', token: TOK_STRANGER, items: [{ kind: 'suggestion', target_id: mine.id, field: 'caption', value: 'x' }] }).ok, false);
+});
+
 test('own_thumb: only your own pending photo', () => {
   const { t } = setup();
   const up = t.post({ action: 'upload_photo', token: TOK_LINDA, image: Buffer.from('x').toString('base64'), mime: 'image/jpeg' });

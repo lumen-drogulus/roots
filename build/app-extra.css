@@ -373,3 +373,10 @@ body.photomode .levelmenu { display: none; }
 }
 .chip .crel { color: #7A5D1E; font-size: 13px; }
 body.photomode .builtby { display: none; }
+/* photo details edit (2026-11-23) */
+.vedit { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: #F1EEE6; }
+.vedit[hidden] { display: none; }
+.vedit textarea, .vedit input { width: 100%; font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(29,43,36,.25); background: #fff; }
+.vedit .field label { display: block; font-size: 14px; color: var(--ink-soft); margin-bottom: 4px; }
+.vpend .nbtn { padding: 5px 12px; font-size: 13.5px; }
+.pgedit { padding: 7px 14px; font-size: 14px; }

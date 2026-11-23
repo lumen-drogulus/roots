@@ -70,7 +70,8 @@ function personName(r) {
 }
 const FIELD = { first_name: 'First name', middle_name: 'Middle name', birth_surname: 'Last name at birth', married_names: 'Later last names', nicknames: 'Goes by',
   sex: 'Sex', living: 'Living', birth_date: 'Born', birth_place: 'Birthplace', death_date: 'Died', death_place: 'Place of death', notes: 'Notes',
-  is_placeholder: 'Unknown placeholder', subtype: 'Kind of link', start_date: 'Start', end_date: 'End' };
+  is_placeholder: 'Unknown placeholder', subtype: 'Kind of link', start_date: 'Start', end_date: 'End',
+  caption: 'Caption', date_taken: 'When', place: 'Where', kind: 'Photo or document' };
 const listText = v => { try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) ? a.join(', ') : String(v); } catch (e) { return String(v); } };
 const showVal = (field, v) => field === 'married_names' ? (listText(v) || '(none)') : v === '' || v == null ? '(blank)' : /date/.test(field) ? fuzzy(v) : field === 'is_placeholder' ? (v === true || v === 'true' ? 'yes' : 'no') : String(v);
 
@@ -173,7 +174,7 @@ function describe(it) {
       if (r.field === 'remove') return { label: 'Wrong link', what: `Remove ${esc(it.target_label)}`,
         detail: `Says this link is wrong. Approving takes it off the tree; both people stay.${r.source ? '<br>Source: ' + esc(r.source) : ''}` };
       return { label: 'Correction', what: `${esc(it.target_label)}: ${esc(FIELD[r.field] || r.field)}`,
-        detail: `<span class="change"><s>${esc(showVal(r.field, it.current_value))}</s> → <b>${esc(showVal(r.field, it.proposed))}</b></span>${r.source ? '<br>Source: ' + esc(r.source) : ''}` };
+        detail: `<span class="change"><s>${esc(showVal(r.field, it.current_value))}</s> → <b>${esc(showVal(r.field, it.proposed))}</b></span>${r.source ? '<br>Source: ' + esc(r.source) : ''}${it.photo_file_id ? `<div class="phrow"><a class="btn" href="https://drive.google.com/file/d/${encodeURIComponent(it.photo_file_id)}/view" target="_blank" rel="noopener">Open the file</a></div>` : ''}` };
     case 'photo': {
       const doc = (it.photo_kind || r.kind) === 'document';
       const tagged = (it.tagged || []).map(t => t.name).join(', ') || 'nobody tagged';
@@ -440,7 +441,7 @@ if (matchMedia('(hover: hover)').matches) {
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = 'dec43fc720';
+  const BUILD = 'd4fa3645e9';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

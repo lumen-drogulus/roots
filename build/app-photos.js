@@ -29,7 +29,15 @@ function indexPhotos(tree) {
     if (!x || x.pending) return;
     (x.myTags = x.myTags || []).push(t); add(t.person_id, x);
   });
+  // Their unconfirmed changes to a confirmed photo's details show on their screen right away (2026-11-23).
+  (own.suggestions || []).forEach(sg => {
+    const x = PHOTO_BY_ID.get(sg.target_id);
+    if (!x || x.pending || !PHOTO_EDIT_FIELDS.includes(sg.field)) return;
+    if (!x.base) x.base = { caption: x.caption || '', date_taken: x.date_taken || '', place: x.place || '', kind: x.kind || 'photo' };
+    x[sg.field] = sg.value; (x.edits = x.edits || []).push(sg);
+  });
 }
+const PHOTO_EDIT_FIELDS = ['caption', 'date_taken', 'place', 'kind'];
 const isPdf = f => f.mime === 'application/pdf';
 /* A preview that won't load (Drive still making it, or offline) becomes the plain icon. */
 function phFail(img, doc, big) { const s = document.createElement('span'); s.className = 'phicon' + (big ? ' big' : ''); s.innerHTML = doc ? ICON_DOC : ICON_PIC; img.replaceWith(s); }
@@ -113,6 +121,7 @@ function renderViewer() {
     </div>
     <div class="vinfo">
       ${f.pending ? `<p class="vpend"><span class="ptag">Unconfirmed</span> Only you see this until ${OWNER_NAME} confirms it.${big ? ' Full size shows then too.' : ''}</p>` : ''}
+      ${f.edits ? `<p class="vpend" id="vEdits"><span class="ptag">Your edit</span> Only you see your change until ${OWNER_NAME} confirms it. <button class="nbtn" id="vEditsBack">Take back</button></p>` : ''}
       <h3>${esc(f.caption || (doc ? 'Document' : 'Photo'))}</h3>
       ${meta ? `<p class="vmeta">${esc(meta)}</p>` : ''}
       ${open}
@@ -121,12 +130,19 @@ function renderViewer() {
       </div>
       <div class="vtag" id="vTagBox" hidden><input id="vTagQ" placeholder="Start typing a name" autocomplete="off" aria-label="Who to tag"><div class="pick" id="vTagList"></div></div>
       ${f.source || f.added_by ? `<p class="prov">${[f.added_by ? 'Added by ' + esc(f.added_by) : '', f.source ? 'Source: ' + esc(f.source) : ''].filter(Boolean).join(' · ')}</p>` : ''}
-      <div class="vbtns"><button class="iconbtn" id="vTag">Tag someone</button>${f.pending ? '<button class="iconbtn" id="vTakeBack">Take back</button>' : ''}</div>
+      <div class="vedit" id="vEditBox" hidden></div>
+      <div class="vbtns"><button class="iconbtn" id="vEdit">${f.caption ? 'Edit details' : 'Add a caption and date'}</button><button class="iconbtn" id="vTag">Tag someone</button>${f.pending ? '<button class="iconbtn" id="vTakeBack">Take back</button>' : ''}</div>
     </div>`;
   $('#vClose').onclick = closeViewer;
   if ($('#vPrev')) { $('#vPrev').onclick = () => viewerStep(-1); $('#vNext').onclick = () => viewerStep(1); }
   viewer.querySelectorAll('[data-goto-person]').forEach(b => b.onclick = () => { const pid = b.dataset.gotoPerson; closeViewer(); openPerson(pid); });
   $('#vTag').onclick = () => openViewerTag(f);
+  $('#vEdit').onclick = () => openPhotoEdit(f);
+  if ($('#vEditsBack')) $('#vEditsBack').onclick = async () => {
+    $('#vEditsBack').disabled = true;
+    try { await api({ action: 'withdraw', ids: f.edits.map(x => x.id) }); } catch (err) { toast(err.message); renderViewer(); return; }
+    toast('Your change is taken back.'); await afterPhotoChange(f.id);
+  };
   if ($('#vTakeBack')) $('#vTakeBack').onclick = () => {
     const box = $('#vTakeBack').parentElement;
     box.innerHTML = `<span>Take back this ${kindWord(f)}? ${OWNER_NAME} won't see it.</span><button class="nbtn yes" id="vTbYes">Yes, take back</button><button class="nbtn" id="vTbNo">Keep</button>`;
@@ -138,6 +154,55 @@ function renderViewer() {
     };
   };
   fillPendingThumbs(viewer);
+}
+/* Edit a photo's details (Jonny, 2026-11-23): caption, when, where, photo or document. Jonny's edits apply at once;
+   a relative's own unconfirmed upload is fixed in place; anyone else's edit to a confirmed photo goes to Jonny as a
+   correction, replacing their own earlier unconfirmed change to it, and shows on their screen as "Your edit". */
+function openPhotoEdit(f) {
+  const box = $('#vEditBox'); box.hidden = false; $('#vEdit').hidden = true;
+  const kind = f.kind === 'document' ? 'document' : 'photo';
+  box.innerHTML = `
+    <div class="field"><label for="peCap">${kind === 'document' ? 'What is it?' : "What's happening? Who's in it?"}</label><textarea id="peCap" rows="2" placeholder="${kind === 'document' ? 'Birth certificate, a letter from Grandpa' : 'Thanksgiving at Barbara\'s'}">${esc(f.caption || '')}</textarea></div>
+    <div class="row2"><div class="field"><label for="peWhen">When</label><input id="peWhen" value="${esc(fuzzyToText(f.date_taken))}" placeholder="1965, about 1965"></div>
+      <div class="field"><label for="pePlace">Where</label><input id="pePlace" value="${esc(f.place || '')}" placeholder="Grandma's house, Cleveland"></div></div>
+    <div class="seg small" role="group" aria-label="Photo or document" id="peKind"><button type="button" data-v="photo" aria-pressed="${kind === 'photo'}">Photo</button><button type="button" data-v="document" aria-pressed="${kind === 'document'}">Document</button></div>
+    <p class="hint">${ADMIN_KEY ? 'Saves right away.' : f.pending ? `Fixes what you sent. ${OWNER_NAME} hasn't looked at it yet.` : `${OWNER_NAME} confirms changes before everyone sees them. You'll see yours right away.`}</p>
+    <p class="formerr" id="peErr" role="alert" hidden></p>
+    <div class="vbtns"><button class="primary" id="peSave">Save</button><button class="iconbtn" id="peCancel">Cancel</button></div>`;
+  box.querySelectorAll('#peKind button').forEach(b => b.onclick = () => box.querySelectorAll('#peKind button').forEach(x => x.setAttribute('aria-pressed', x === b)));
+  box.oninput = () => { $('#peErr').hidden = true; };
+  $('#peCancel').onclick = renderViewer;
+  $('#peSave').onclick = () => savePhotoEdit(f);
+  $('#peCap').focus();
+}
+async function savePhotoEdit(f) {
+  const err = m => { $('#peErr').textContent = m; $('#peErr').hidden = !m; };
+  let now;
+  try {
+    now = { caption: $('#peCap').value.trim(), date_taken: toFuzzy($('#peWhen').value, 'When'), place: $('#pePlace').value.trim(),
+      kind: (box => (box.querySelector('[aria-pressed="true"]') || {}).dataset.v || 'photo')($('#peKind')) };
+  } catch (e) { err(e.message); return; }
+  const btn = $('#peSave'); btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    if (f.pending) await api({ action: 'own_edit', id: f.id, data: now });
+    else {
+      const was = f.base || { caption: f.caption || '', date_taken: f.date_taken || '', place: f.place || '', kind: f.kind || 'photo' };
+      const items = PHOTO_EDIT_FIELDS.filter(k => (now[k] || '') !== (was[k] || '')).map(k => ({ kind: 'suggestion', target_id: f.id, field: k, value: now[k] }));
+      const earlier = (f.edits || []).map(x => x.id);
+      if (!items.length && !earlier.length) { renderViewer(); toast('Nothing changed.'); return; }
+      if (items.length) await api({ action: 'submit', items, withdraw: earlier.length ? earlier : undefined });
+      else await api({ action: 'withdraw', ids: earlier });
+    }
+  } catch (e) { btn.disabled = false; btn.textContent = 'Save'; err(e.message); return; }
+  toast(ADMIN_KEY ? 'Saved.' : f.pending ? 'Fixed.' : `Sent to ${OWNER_NAME}. You'll see your change now, marked Your edit.`);
+  await afterPhotoChange(f.id);
+}
+/* After a change, reload and put the viewer back on the same photo. */
+async function afterPhotoChange(id) {
+  const { from, listFn } = VW;
+  await reload();
+  const list = listFn(), i = list.findIndex(x => x.id === id);
+  if (i >= 0 && !viewer.hidden) { VW = { from, listFn, list, i }; renderViewer(); } else closeViewer();
 }
 function openViewerTag(f) {
   const box = $('#vTagBox'); box.hidden = false; $('#vTag').hidden = true;
@@ -383,9 +448,11 @@ function pgCardHTML(f, i) {
       <h3>${esc(f.caption || (doc ? 'Document' : 'Photo'))}</h3>
       ${meta ? `<p class="vmeta">${esc(meta)}</p>` : ''}
       ${f.pending ? `<p class="vmeta">Only you see this until ${OWNER_NAME} confirms it.</p>` : ''}
+      ${f.edits ? `<p class="vmeta"><span class="pgun">Your edit</span> Waiting for ${OWNER_NAME} to confirm your change.</p>` : ''}
       <div class="pgwho"><span class="lab">${doc ? 'About' : people.length === 1 ? 'Who you\'re seeing' : `Who you're seeing (${people.length})`}</span>
         ${people.length ? `<ul>${people.map(pgPersonHTML).join('')}</ul>` : '<p class="muted">Nobody tagged yet. Open it and tap Tag someone if you know who this is.</p>'}</div>
       ${prov ? `<p class="prov">${prov}</p>` : ''}
+      <div><button class="nbtn pgedit" data-pge="${i}">${f.caption ? 'Edit details' : 'Add a caption and date'}</button></div>
     </div></article>`;
 }
 function photosTop() {
@@ -428,6 +495,7 @@ function renderPhotosPage(toTop) {
   const wx = $('#pgWhoX'); if (wx) wx.onclick = () => { PG.who = null; renderPhotosPage(true); };
   const so = $('#pgSort'); if (so) so.onchange = () => { PG.sort = so.value; renderPhotosPage(true); };
   photosEl.querySelectorAll('[data-pgi]').forEach(b => b.onclick = () => openViewerList(pgList, +b.dataset.pgi));
+  photosEl.querySelectorAll('[data-pge]').forEach(b => b.onclick = () => { openViewerList(pgList, +b.dataset.pge); if (VW) openPhotoEdit(VW.list[VW.i]); });
   photosEl.querySelectorAll('[data-goto-person]').forEach(b => b.onclick = () => openPerson(b.dataset.gotoPerson));
   fillPendingThumbs(photosEl);
 }

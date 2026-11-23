@@ -56,7 +56,7 @@ var PERSON_FIELDS = {
   notes: 'notes', is_placeholder: 'bool'
 };
 var RELATIONSHIP_FIELDS = { subtype: 'subtype', start_date: 'date', end_date: 'date' };
-var PHOTO_FIELDS = { caption: 'notes', date_taken: 'date', place: 'text' };
+var PHOTO_FIELDS = { caption: 'notes', date_taken: 'date', place: 'text', kind: 'photokind' };   // kind editable since 2026-11-23
 // What can be uploaded (2026-11-22): photos and scans, and PDFs. The page shrinks images it can read before sending;
 // HEIC, TIFF and PDF arrive as they are.
 var FILE_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif',
@@ -771,6 +771,9 @@ function ownEdit_(db, body) {
     var sub = cleanText_(input.subtype, 20).toLowerCase();
     if ((row.type === 'partner' ? PARTNER_SUBTYPES : PC_SUBTYPES).indexOf(sub) < 0) throw userError_('Unknown kind of link.');
     db.Relationships.set(row, 'subtype', sub);
+  } else if (hit.table === 'Photos') {
+    var pdata = cleanFields_(input, PHOTO_FIELDS, '');
+    Object.keys(pdata).forEach(function (f) { db.Photos.set(row, f, pdata[f]); });
   } else {
     throw userError_('Take that one back and send it again.');
   }
@@ -837,10 +840,11 @@ function validateItem_(ctx, item, i) {
   }
 
   if (item.kind === 'suggestion') {
-    var target = db.People.get(item.target_id) || db.Relationships.get(item.target_id);
+    var target = db.People.get(item.target_id) || db.Relationships.get(item.target_id) || db.Photos.get(item.target_id);
     if (target && target.status === 'merged') target = resolvePerson_(db, target.id);
-    if (!target || target.status !== 'approved') throw userError_(where + 'can only suggest changes to someone already in the tree.');
-    var fields = db.People.get(target.id) ? PERSON_FIELDS : RELATIONSHIP_FIELDS;
+    if (!target || target.status !== 'approved') throw userError_(where + 'can only suggest changes to something already on the tree.');
+    // A photo's caption, date, place and kind can be corrected like a person's details (2026-11-23).
+    var fields = db.People.get(target.id) ? PERSON_FIELDS : db.Photos.get(target.id) ? PHOTO_FIELDS : RELATIONSHIP_FIELDS;
     // "This link is wrong": a correction that, once confirmed, takes the link off the tree. Both people stay.
     if (item.field === 'remove') {
       if (fields !== RELATIONSHIP_FIELDS) throw userError_(where + 'only a link can be removed this way.');
@@ -1020,6 +1024,10 @@ function cleanFields_(input, spec, where) {
         if (LIVING_VALUES.indexOf(out[f]) < 0) throw userError_(where + 'living status not understood.');
         break;
       case 'subtype': out[f] = cleanText_(v, 20).toLowerCase(); break;
+      case 'photokind':
+        out[f] = cleanText_(v, 20).toLowerCase();
+        if (['photo', 'document'].indexOf(out[f]) < 0) throw userError_(where + 'photo or document?');
+        break;
     }
   });
   return out;
@@ -1114,6 +1122,12 @@ function relLabel_(db, r) {
     : personLabel_(db, r.person_a) + ' as the parent of ' + personLabel_(db, r.person_b);
 }
 
+// "the photo "Thanksgiving at Barbara's"", or "a photo" when it has no caption yet.
+function photoLabel_(f) {
+  var w = photoKind_(f) === 'document' ? 'document' : 'photo';
+  return f.caption ? 'the ' + w + ' "' + String(f.caption).slice(0, 60) + '"' : 'a ' + w + ' with no caption';
+}
+
 function personLabel_(db, id) {
   var p = db.People.get(id);
   if (!p) return '(missing ' + id + ')';
@@ -1148,8 +1162,10 @@ function adminQueue_(db) {
   });
   db.Suggestions.rows.forEach(function (s) {
     if (s.status !== 'pending') return;
-    var t = db.People.get(s.target_id) || db.Relationships.get(s.target_id);
-    add('suggestion', s, { target_label: db.People.get(s.target_id) ? personLabel_(db, s.target_id) : relLabel_(db, t),
+    var t = db.People.get(s.target_id) || db.Relationships.get(s.target_id) || db.Photos.get(s.target_id);
+    var ph = db.Photos.get(s.target_id);
+    add('suggestion', s, { target_label: db.People.get(s.target_id) ? personLabel_(db, s.target_id) : ph ? photoLabel_(ph) : relLabel_(db, t),
+      photo_file_id: ph ? ph.drive_file_id : '',
       current_value: t ? parseJsonValue_(JSON.stringify(t[s.field])) : '', proposed: parseJsonValue_(s.proposed_value) });
   });
   db.Photos.rows.forEach(function (f) {
@@ -1286,8 +1302,8 @@ function adminDecide_(db, items, decision) {
 
 /** Copies an approved suggestion onto its target, keeping the old value on the suggestion row. */
 function applySuggestion_(db, s, now) {
-  var target = db.People.get(s.target_id) ? resolvePerson_(db, s.target_id) : db.Relationships.get(s.target_id);
-  var table = db.People.get(s.target_id) ? db.People : db.Relationships;
+  var table = db.People.get(s.target_id) ? db.People : db.Photos.get(s.target_id) ? db.Photos : db.Relationships;
+  var target = table === db.People ? resolvePerson_(db, s.target_id) : table.get(s.target_id);
   if (!target) throw userError_('the person or link it changes no longer exists');
   if (s.field === 'remove') {
     // the link leaves the public tree like a taken-back approval; the suggestion keeps what it was

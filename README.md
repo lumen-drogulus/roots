@@ -20,10 +20,10 @@ Three views (2026-11-22), named in `meta.view`: `public` (anyone: living people'
 | action | body | notes |
 |---|---|---|
 | `tree` | `token`, `key?` | Same as GET, keeps the token out of the URL. With the admin key: the owner view |
-| `submit` | `token`, `display_name?`, `items[]` | Kinds: `person` (with `ref: "new:x"`), `relationship`, `suggestion`, `tag`, `claim`. Refs link items in one batch. All-or-nothing validation |
+| `submit` | `token`, `display_name?`, `items[]` | Kinds: `person` (with `ref: "new:x"`), `relationship`, `suggestion` (on a person, a link, or since 2026-11-23 a photo's `caption`, `date_taken`, `place`, `kind`), `tag`, `claim`. Refs link items in one batch. All-or-nothing validation |
 | `upload_photo` | `token`, `image` (base64), `mime`, `kind?` (`photo`/`document`), `caption?`, `date_taken?`, `place?`, `source?`, `tags[]` | JPEG, PNG, WebP, GIF, HEIC/HEIF, TIFF or PDF, up to 10 MB. The page shrinks images it can read (1600px photos, 2400px documents) |
 | `own_thumb` | `token`, `id` | A preview of the caller's own pending photo |
-| `withdraw`, `own_edit` | `token`, … | A relative's own pending rows only |
+| `withdraw`, `own_edit` | `token`, … | A relative's own pending rows only; `own_edit` also fixes their own pending photo's details |
 | `set_adoption_shown` | `token` or `key`, `person_id`, `shown` | Only the adopted person (approved claim) or the owner. Applies at once |
 | `admin_queue` | `key` | Pending items grouped by submission, with duplicate hints and the living-person flag on photos |
 | `admin_approve` / `admin_reject` | `key`, `items[{kind,id,data?}]` | People are processed before their links, whatever the order sent |
