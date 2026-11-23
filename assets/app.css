@@ -380,3 +380,26 @@ body.wheelmode #stage, body.wheelmode #btnAll, body.wheelmode #btnZoomIn, body.w
 body.pathmode .node.offpath > * { opacity: .25; transition: opacity .3s; }
 body.pathmode .node.onpath .card { box-shadow: 0 0 0 4px rgba(169, 130, 47, .35), 0 8px 20px rgba(23, 36, 30, .14); }
 body.pathmode #edges { opacity: .35; }
+
+/* Info buttons (2026-11-22): a circled i beside a choice; tap, click or hover explains it. */
+.infobtn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: -4px 0 -4px 2px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--gilt, #A9822F); cursor: pointer; vertical-align: middle; position: relative; }
+.infobtn::before { content: ''; position: absolute; inset: -9px; }   /* a finger-sized target around a small mark */
+.infobtn svg { width: 17px; height: 17px; }
+.infobtn:hover, .infobtn[aria-expanded="true"] { color: var(--ink, #1D2B24); }
+.label .infobtn { margin-top: -6px; }
+.infopop { position: fixed; z-index: 60; padding: 12px 14px; border-radius: 12px; background: var(--ink, #1D2B24); color: #FFFDF9; font-size: 13.5px; line-height: 1.45; box-shadow: 0 8px 24px rgba(23, 36, 30, .28); text-transform: none; letter-spacing: normal; font-weight: 400; }
+.infopop p { margin: 0; }
+.infopop p + p { margin-top: 7px; }
+.infopop b { color: var(--gilt-light, #C9A35A); font-weight: 600; }
+.card .tag[data-info] { cursor: help; }
+
+/* The Show menu: how much of the family to draw. */
+#btnAll .caret { width: 12px; height: 12px; margin-left: -3px; }
+@media (max-width: 640px) { #btnAll .caret { display: none; } }
+.levelmenu { position: fixed; z-index: 55; min-width: 210px; padding: 6px; border-radius: 14px; background: var(--card, #F8F6F1); border: 1px solid var(--line); box-shadow: 0 10px 28px rgba(23, 36, 30, .2); display: flex; flex-direction: column; }
+.levelmenu .lmhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.levelmenu button[data-lv] { display: flex; align-items: center; gap: 10px; padding: 10px 10px; border: 0; border-radius: 9px; background: none; font: inherit; font-size: 15px; color: var(--ink); text-align: left; cursor: pointer; }
+.levelmenu button[data-lv]:hover, .levelmenu button[data-lv]:focus-visible { background: rgba(29, 43, 36, .07); outline: none; }
+.levelmenu .tick { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid rgba(29, 43, 36, .35); flex: none; }
+.levelmenu button[aria-checked="true"] .tick { border: 5px solid var(--ink); }
+body.wheelmode .levelmenu { display: none; }

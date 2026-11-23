@@ -223,7 +223,7 @@ function whoField() {
   return `<div class="field"><label for="fWho">Your name, so ${OWNER_NAME} knows who sent this</label><input id="fWho" value="${esc(myName())}" autocomplete="name" placeholder="For example: Linda, Carol's cousin"></div>`;
 }
 function livingSeg(v) {
-  return `<div class="field"><span class="lab">Are they living?</span><div class="seg" id="fLiving">
+  return `<div class="field"><span class="lab">Are they living? ${infoBtn(INFO.living)}</span><div class="seg" id="fLiving">
     <button type="button" data-v="living" aria-pressed="${v === 'living'}">Living</button><button type="button" data-v="deceased" aria-pressed="${v === 'deceased'}">Passed away</button><button type="button" data-v="unknown" aria-pressed="${v === 'unknown'}">Not sure</button></div></div>`;
 }
 /* Names are stored as birth_surname plus a list of later last names, oldest first; the last one is the name they go by now.
@@ -241,6 +241,14 @@ function namesFromPerson(p) {
   return { last: p.last || '', birthName: married.length ? (p.birthSurname || '') : '', otherNames: married.slice(0, -1) };
 }
 const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
+/* Info buttons on the choices where a wrong guess writes something Jonny then has to untangle (2026-11-22). */
+const INFO = {
+  parent: `**Birth:** the parent they were born to.\n**Step:** married to or partnered with one of their parents, but not their parent by birth or adoption.\n**Adoptive:** legally adopted them.\n**Foster:** raised them in foster care without adopting.\nWhile either of them is living, adoptive and foster show to everyone as plain "parent".`,
+  sibling: `**Full:** the same two parents.\n**Half:** one parent in common. You'll pick which one, so their line comes from the right parent.\n**Step:** no parent in common. One of their parents is with one of the other's parents.`,
+  couple: `**Married:** married now.\n**Partners:** together now, not married.\n**Divorced:** were married, aren't now.\n**Former partners:** were together, never married, and aren't together now.\n**Widowed:** married until one of them died.`,
+  living: `**Living:** only their names show. Dates, places, maiden name and stories stay private while they're alive.\n**Passed away:** everything you add shows once ${OWNER_NAME} confirms it.\n**Not sure:** treated like Living, so their details stay hidden from everyone, including you, until someone marks them Passed away.`,
+  which: `**Someone new:** they aren't on the tree yet.\n**Already in the tree:** they're on it somewhere, maybe as Unknown. Pick them from the list so they get linked, not added a second time.\nAdding someone who's already there makes a duplicate that ${OWNER_NAME} has to merge by hand.`
+};
 /* A link that shouldn't exist (a mis-tapped "Yes, link them", the wrong parent picked): chosen in Edit, sent as a
    correction that removes the link once confirmed. Both people stay. */
 const REMOVE = '__remove';
@@ -257,7 +265,7 @@ function partnerKindsHTML(id) {
     const cur = removing ? REMOVE : PT_KINDS.some(([v]) => v === x.sub) ? x.sub : 'married';
     return `<div class="field"><label for="fPt_${esc(x.id)}">${esc(displayName(P(x.id)))}</label><select id="fPt_${esc(x.id)}" data-partner="${esc(x.id)}" data-was="${esc(base || '')}">${PT_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}<option value="${REMOVE}"${cur === REMOVE ? ' selected' : ''}>Never partners: remove this link</option></select></div>`;
   });
-  return rows.length ? `<div class="label">Marriages and partners</div><div class="row2">${rows.join('')}</div>` : '';
+  return rows.length ? `<div class="label">Marriages and partners ${infoBtn(INFO.couple)}</div><div class="row2">${rows.join('')}</div>` : '';
 }
 function parentKindsHTML(id) {
   const rows = parentsOf(id).filter(q => PC_ID.has(q + '>' + id) && !P(q).placeholder).map(q => {
@@ -271,7 +279,7 @@ function parentKindsHTML(id) {
     return `<div class="field"><label for="fPk_${esc(q)}">${esc(displayName(P(q)))}</label><select id="fPk_${esc(q)}" data-parent="${esc(q)}" data-was="${knownBase ? base : ''}">${opts}</select></div>`;
   });
   const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
-  return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents</div><div class="row2">${rows.join('')}</div>` +
+  return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents ${infoBtn(INFO.parent)}</div><div class="row2">${rows.join('')}</div>` +
     (masked ? '<p class="hint">"Keep as is": while someone is living, whether a parent is by birth, adoption or fostering stays private, so it isn\'t shown here.</p>' : '') : '';
 }
 const nameRowHTML = (v = '') => `<div class="namerow"><input class="fOtherName" value="${esc(v)}" autocomplete="off" aria-label="Earlier last name"><button type="button" class="rm" aria-label="Remove this last name">×</button></div>`;
@@ -525,14 +533,14 @@ function openAdd(id, opts = {}) {
     <form class="body form" id="addForm" novalidate>
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
         ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
-      <div class="field" id="fSibWrap" hidden><span class="lab">What kind of sibling?</span><div class="seg" id="fSib"><button type="button" data-v="full" aria-pressed="true">Full</button><button type="button" data-v="half" aria-pressed="false">Half</button><button type="button" data-v="step" aria-pressed="false">Step</button></div></div>
+      <div class="field" id="fSibWrap" hidden><span class="lab">What kind of sibling? ${infoBtn(INFO.sibling)}</span><div class="seg" id="fSib"><button type="button" data-v="full" aria-pressed="true">Full</button><button type="button" data-v="half" aria-pressed="false">Half</button><button type="button" data-v="step" aria-pressed="false">Step</button></div></div>
       <div class="field" id="fSibParWrap" hidden><label for="fSibPar" id="fSibParLab">Which parent do you share?</label><select id="fSibPar"></select><p class="hint" id="fSibHint" hidden></p></div>
-      <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
+      <div class="field" id="fPcWrap" hidden><span class="lab"><span id="fPcLab">What kind of parent?</span> ${infoBtn(INFO.parent)}</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
         <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
-      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="former" aria-pressed="false">Former partners</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
+      <div class="field" id="fKindWrap" hidden><span class="lab">Together as ${infoBtn(INFO.couple)}</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="former" aria-pressed="false">Former partners</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
       <div class="field" id="fKidsWrap" hidden><span class="lab" id="fKidsLab">Are they also the parent of…</span><div class="kids" id="fKids"></div></div>
-      ${self ? '' : `<div class="field"><span class="lab">Who are they?</span><div class="seg" id="fWhich"><button type="button" data-v="new" aria-pressed="true">Someone new</button><button type="button" data-v="existing" aria-pressed="false">Already in the tree</button></div></div>
+      ${self ? '' : `<div class="field"><span class="lab">Who are they? ${infoBtn(INFO.which)}</span><div class="seg" id="fWhich"><button type="button" data-v="new" aria-pressed="true">Someone new</button><button type="button" data-v="existing" aria-pressed="false">Already in the tree</button></div></div>
       <div id="fPickWrap" hidden><div class="field"><label for="fPickQ">Find them</label><input id="fPickQ" placeholder="Type a name, or tap one below" autocomplete="off"></div><div class="pick tall" id="fPickList"></div></div>`}
 ` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
@@ -833,7 +841,7 @@ function pickPerson(title, sub, onPick, filter = () => true) {
   $('#qName').oninput = list; list(); setTimeout(() => $('#qName').focus(), 50);
 }
 $('#btnSearch').onclick = () => pickPerson('Find a person', 'Everyone in the tree, folded branches included.', id => { closePanel(); STATE.focus = id; render(); });
-$('#btnAll').onclick = () => { STATE.all = !STATE.all; $('#btnAll').setAttribute('aria-pressed', STATE.all); if (!STATE.all) STATE.open.clear(); render({ camera: false }); };
+// The Show menu (#btnAll) lives in app-levels.js.
 
 /* Names in the details card that point at another person (a spouse in the last-name history) open that person. */
 panel.addEventListener('click', e => { const a = e.target.closest('[data-goto]'); if (!a) return; e.preventDefault(); openPerson(a.dataset.goto); });

@@ -173,6 +173,68 @@ function treeToGraphData(tree) {
 }
 
 /* =====================================================================
+ * Info buttons (2026-11-22): a small circled "i" that explains a control in a few lines.
+ * Tap or click opens it, a tap anywhere else closes it, and with a mouse it also opens on hover.
+ * Anything with data-info works the same way, so a tag on a card ("Unconfirmed") can explain itself.
+ * Text is ours, never a relative's: each line of the text becomes its own paragraph, and **bold** is the only markup.
+ * ===================================================================== */
+const INFO_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 9v5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="10" cy="6.1" r="1.05" fill="currentColor"/></svg>';
+const infoAttr = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// The tags on cards (the card is itself a button, so the tag answers taps and hover but isn't a second tab stop).
+const TAG_INFO = typeof OWNER_NAME === 'undefined' ? {} : {
+  pending: infoAttr(`Something you added. Only you see it until ${OWNER_NAME} confirms it.\nTap the card to change it or take it back.`),
+  edit: infoAttr(`You changed something about this person. You see your version; everyone else sees the old one until ${OWNER_NAME} confirms it.\nTap the card to change it again or take it back.`)
+};
+function infoBtn(text, label = 'What this means') {
+  const t = infoAttr(text);
+  return `<button type="button" class="infobtn" data-info="${t}" aria-label="${label}" aria-expanded="false">${INFO_ICON}</button>`;
+}
+const infoPop = document.createElement('div');
+infoPop.className = 'infopop'; infoPop.setAttribute('role', 'tooltip'); infoPop.id = 'infoPop'; infoPop.hidden = true;
+document.body.appendChild(infoPop);
+let infoFor = null, infoPinned = false;
+function infoHTML(text) {
+  return text.split('\n').filter(s => s.trim()).map(s => '<p>' + s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>') + '</p>').join('');
+}
+function showInfo(el, pinned) {
+  if (infoFor && infoFor !== el) infoFor.setAttribute('aria-expanded', 'false');
+  infoFor = el; infoPinned = !!pinned;
+  infoPop.innerHTML = infoHTML(el.dataset.info || '');
+  infoPop.hidden = false;
+  el.setAttribute('aria-expanded', 'true'); el.setAttribute('aria-describedby', 'infoPop');
+  // Below the button when there's room, else above; kept inside the screen.
+  const r = el.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+  const w = Math.min(320, vw - 24); infoPop.style.width = w + 'px';
+  const ph = infoPop.offsetHeight;
+  const left = Math.max(12, Math.min(vw - w - 12, r.left + r.width / 2 - w / 2));
+  const top = r.bottom + 8 + ph <= vh - 8 ? r.bottom + 8 : Math.max(8, r.top - 8 - ph);
+  infoPop.style.left = left + 'px'; infoPop.style.top = top + 'px';
+}
+function hideInfo() {
+  if (infoFor) { infoFor.setAttribute('aria-expanded', 'false'); infoFor.removeAttribute('aria-describedby'); }
+  infoFor = null; infoPinned = false; infoPop.hidden = true;
+}
+// Capture phase, so a tap on an info target never also opens the card or presses the button it sits beside.
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-info]');
+  if (t) { e.preventDefault(); e.stopPropagation(); if (infoFor === t && infoPinned) hideInfo(); else showInfo(t, true); return; }
+  if (infoFor && !infoPop.contains(e.target)) hideInfo();
+}, true);
+document.addEventListener('pointerdown', e => { if (infoFor && !infoPop.contains(e.target) && !(e.target.closest && e.target.closest('[data-info]'))) hideInfo(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && infoFor) { const f = infoFor; hideInfo(); f.focus(); } });
+addEventListener('resize', () => { if (infoFor) hideInfo(); });
+document.addEventListener('scroll', () => { if (infoFor) hideInfo(); }, true);
+if (matchMedia('(hover: hover)').matches) {
+  document.addEventListener('mouseover', e => { const t = e.target.closest && e.target.closest('[data-info]'); if (t && !infoPinned && infoFor !== t) showInfo(t, false); });
+  document.addEventListener('mouseout', e => {
+    if (!infoFor || infoPinned) return;
+    const to = e.relatedTarget;
+    if (to && (infoFor.contains(to) || infoPop.contains(to))) return;
+    if (e.target.closest && (e.target.closest('[data-info]') === infoFor || infoPop.contains(e.target))) hideInfo();
+  });
+}
+
+/* =====================================================================
  * Graph
  * ===================================================================== */
 let G;
@@ -276,8 +338,8 @@ function connectedTwice(id) {
  * ===================================================================== */
 const CW = 180, CH = 70, FW = 210, FH = 82, GAP = 22, CG = 44, ROW = 150, BUDW = 124;
 const MAX_UP = 3, MAX_DOWN = 2;
-const STATE = { viewer: null, owner: null, focus: null, open: new Set(), all: false, rootsBelow: true, selected: null };
-const isOpen = k => STATE.all || STATE.open.has(k);
+const STATE = { viewer: null, owner: null, focus: null, open: new Set(), level: 0, rootsBelow: true, selected: null };
+const isOpen = k => STATE.level >= 1 || STATE.open.has(k);
 const genY = g => (STATE.rootsBelow ? g : -g) * ROW;
 
 function layout() {
@@ -512,6 +574,17 @@ function layout() {
     ks.forEach(k => { const o = parentsOf(k).find(pp => prt.includes(pp)) || ''; if (!byOther.has(o)) byOther.set(o, []); byOther.get(o).push(k); });
     for (const [o, kids] of byOther) {
       const mid = o ? (n.x + nodes.get(o).x) / 2 : n.x;
+      if (STATE.level >= 2) {
+        // All relatives: each cousin with their partners and every generation below, the descendants' couples layout.
+        const units = kids.map(k => descUnit(k, 1));
+        const total = units.reduce((t, u) => t + u.L + u.R, 0) + (units.length - 1) * GAP;
+        let kx = mid - total / 2;
+        const block = [];
+        units.forEach(u => { descPlace(u, kx + u.L, n.g - 1, block); kx += u.L + u.R + GAP; });
+        const seenB = new Set();
+        placeBlock(block.filter(b => !nodes.has(b.id) && !seenB.has(b.id) && seenB.add(b.id)), dir);
+        continue;
+      }
       let kx = mid - (kids.length * CW + (kids.length - 1) * GAP) / 2;
       placeBlock(kids.map(k => { const c = { id: k, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return c; }), dir);
     }
@@ -537,6 +610,37 @@ function layout() {
     const center = sibIds.length ? (n.x + sx - dir * (CW + GAP)) / 2 : n.x;
     pars.forEach((par, i) => block.push({ id: par, x: center + (i - (pars.length - 1) / 2) * (CW + CG), y: genY(n.g + 1), g: n.g + 1, kind: 'person', inlaw: pid }));
     placeBlock(block, dir);
+  }
+
+  /* ---- plus in-laws: everyone connected ---- */
+  if (STATE.level >= 3) {
+    const queue = [...nodes.values()].filter(n => n.kind === 'person').sort((a, b) => Math.abs(a.g) - Math.abs(b.g) || Math.abs(a.x) - Math.abs(b.x));
+    const fresh = ids => [...new Set(ids)].filter(x => !nodes.has(x) && G.people.has(x));
+    const put = (list, dir) => { const blk = list.filter(b => !nodes.has(b.id)); if (!blk.length) return; placeBlock(blk, dir); blk.forEach(b => queue.push(nodes.get(b.id))); };
+    for (let qi = 0; qi < queue.length && qi < 20000; qi++) {
+      const n = queue[qi], dir = n.x < 0 ? -1 : 1;
+      const pars = fresh(parentsOf(n.id));
+      // A missing parent whose partner is already drawn goes beside that partner, so the couple stays together.
+      const mate = parentsOf(n.id).find(pp => nodes.has(pp) && pars.some(f => partnersOf(pp).some(x => x.id === f)));
+      if (mate) {
+        const m = nodes.get(mate), md = m.x <= n.x ? 1 : -1;
+        let px = m.x; put(pars.map(id => { px += md * (CW + CG); return { id, x: px, y: m.y, g: m.g, kind: 'person', partnerOf: mate }; }), md);
+      } else if (pars.length) put(pars.map((id, i) => ({ id, x: n.x + (i - (pars.length - 1) / 2) * (CW + CG), y: genY(n.g + 1), g: n.g + 1, kind: 'person' })), dir);
+      const pts = fresh(partnersOf(n.id).map(x => x.id));
+      if (pts.length) { let px = n.x; put(pts.map(id => { px += dir * (CW + CG); return { id, x: px, y: genY(n.g), g: n.g, kind: 'person', partnerOf: n.id }; }), dir); }
+      const sibsW = fresh(siblingsOf(n.id).map(x => x.id));
+      if (sibsW.length) { let sx = n.x; put(sibsW.map(id => { sx += dir * (CW + GAP); return { id, x: sx, y: genY(n.g), g: n.g, kind: 'person' }; }), dir); }
+      const kids = fresh(childrenOf(n.id));
+      if (kids.length) {
+        const byOther = new Map();
+        kids.forEach(k => { const o = parentsOf(k).find(pp => pp !== n.id && nodes.has(pp) && nodes.get(pp).g === n.g) || ''; if (!byOther.has(o)) byOther.set(o, []); byOther.get(o).push(k); });
+        for (const [o, ks] of byOther) {
+          const mid = o ? (n.x + nodes.get(o).x) / 2 : n.x;
+          let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
+          put(ks.map(id => { const b = { id, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return b; }), dir);
+        }
+      }
+    }
   }
 
   /* ---- edges ---- */
@@ -569,7 +673,7 @@ function layout() {
   // close family that no bud on this screen would reveal: shown as "+N", tap to center there.
   // "Reveal" is everyone drawn with every bud open (one extra layout pass, about a millisecond).
   let reveal = placed;
-  if (!STATE.all) { STATE.all = true; try { reveal = new Set(layout().nodes.keys()); } finally { STATE.all = false; } }
+  if (STATE.level < 1) { STATE.level = 1; try { reveal = new Set(layout().nodes.keys()); } finally { STATE.level = 0; } }
   for (const n of nodes.values()) {
     if (n.kind !== 'person' || n.id === F || P(n.id).placeholder) continue;
     const fam = [...parentsOf(n.id), ...childrenOf(n.id), ...partnersOf(n.id).map(x => x.id), ...siblingsOf(n.id).map(x => x.id)];
@@ -577,7 +681,7 @@ function layout() {
     if (hidden.size) n.more = hidden.size;
   }
   // which opened groups hang from which card, so each can be folded again
-  if (!STATE.all) for (const key of STATE.open) {
+  if (STATE.level < 1) for (const key of STATE.open) {
     const anchor = key.slice(key.indexOf(':') + 1);
     const n = nodes.get(anchor);
     if (n) (n.folds = n.folds || []).push(key);
@@ -612,7 +716,7 @@ function cardHTML(n) {
   const yrs = years(p);
   const twice = n.kind === 'person' && connectedTwice(n.id);
   return `<span class="av">${initials(p)}</span><span class="txt"><span class="nm">${esc(cardName(p))}</span><span class="rl">${esc(p.placeholder ? (rel || 'Add a name') : rel)}</span>${yrs ? `<span class="yr">${yrs}</span>` : ''}</span>`
-    + (p.pending ? '<span class="tag">Unconfirmed</span>' : p.edits ? '<span class="tag">Your edit</span>' : '')
+    + (p.pending ? '<span class="tag" data-info="' + TAG_INFO.pending + '">Unconfirmed</span>' : p.edits ? '<span class="tag" data-info="' + TAG_INFO.edit + '">Your edit</span>' : '')
     + (twice ? `<span class="twice" title="Related twice">${ICON.rings}twice</span>` : '');
 }
 function foldLabel(key) {
@@ -1121,7 +1225,7 @@ function whoField() {
   return `<div class="field"><label for="fWho">Your name, so ${OWNER_NAME} knows who sent this</label><input id="fWho" value="${esc(myName())}" autocomplete="name" placeholder="For example: Linda, Carol's cousin"></div>`;
 }
 function livingSeg(v) {
-  return `<div class="field"><span class="lab">Are they living?</span><div class="seg" id="fLiving">
+  return `<div class="field"><span class="lab">Are they living? ${infoBtn(INFO.living)}</span><div class="seg" id="fLiving">
     <button type="button" data-v="living" aria-pressed="${v === 'living'}">Living</button><button type="button" data-v="deceased" aria-pressed="${v === 'deceased'}">Passed away</button><button type="button" data-v="unknown" aria-pressed="${v === 'unknown'}">Not sure</button></div></div>`;
 }
 /* Names are stored as birth_surname plus a list of later last names, oldest first; the last one is the name they go by now.
@@ -1139,6 +1243,14 @@ function namesFromPerson(p) {
   return { last: p.last || '', birthName: married.length ? (p.birthSurname || '') : '', otherNames: married.slice(0, -1) };
 }
 const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
+/* Info buttons on the choices where a wrong guess writes something Jonny then has to untangle (2026-11-22). */
+const INFO = {
+  parent: `**Birth:** the parent they were born to.\n**Step:** married to or partnered with one of their parents, but not their parent by birth or adoption.\n**Adoptive:** legally adopted them.\n**Foster:** raised them in foster care without adopting.\nWhile either of them is living, adoptive and foster show to everyone as plain "parent".`,
+  sibling: `**Full:** the same two parents.\n**Half:** one parent in common. You'll pick which one, so their line comes from the right parent.\n**Step:** no parent in common. One of their parents is with one of the other's parents.`,
+  couple: `**Married:** married now.\n**Partners:** together now, not married.\n**Divorced:** were married, aren't now.\n**Former partners:** were together, never married, and aren't together now.\n**Widowed:** married until one of them died.`,
+  living: `**Living:** only their names show. Dates, places, maiden name and stories stay private while they're alive.\n**Passed away:** everything you add shows once ${OWNER_NAME} confirms it.\n**Not sure:** treated like Living, so their details stay hidden from everyone, including you, until someone marks them Passed away.`,
+  which: `**Someone new:** they aren't on the tree yet.\n**Already in the tree:** they're on it somewhere, maybe as Unknown. Pick them from the list so they get linked, not added a second time.\nAdding someone who's already there makes a duplicate that ${OWNER_NAME} has to merge by hand.`
+};
 /* A link that shouldn't exist (a mis-tapped "Yes, link them", the wrong parent picked): chosen in Edit, sent as a
    correction that removes the link once confirmed. Both people stay. */
 const REMOVE = '__remove';
@@ -1155,7 +1267,7 @@ function partnerKindsHTML(id) {
     const cur = removing ? REMOVE : PT_KINDS.some(([v]) => v === x.sub) ? x.sub : 'married';
     return `<div class="field"><label for="fPt_${esc(x.id)}">${esc(displayName(P(x.id)))}</label><select id="fPt_${esc(x.id)}" data-partner="${esc(x.id)}" data-was="${esc(base || '')}">${PT_KINDS.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}<option value="${REMOVE}"${cur === REMOVE ? ' selected' : ''}>Never partners: remove this link</option></select></div>`;
   });
-  return rows.length ? `<div class="label">Marriages and partners</div><div class="row2">${rows.join('')}</div>` : '';
+  return rows.length ? `<div class="label">Marriages and partners ${infoBtn(INFO.couple)}</div><div class="row2">${rows.join('')}</div>` : '';
 }
 function parentKindsHTML(id) {
   const rows = parentsOf(id).filter(q => PC_ID.has(q + '>' + id) && !P(q).placeholder).map(q => {
@@ -1169,7 +1281,7 @@ function parentKindsHTML(id) {
     return `<div class="field"><label for="fPk_${esc(q)}">${esc(displayName(P(q)))}</label><select id="fPk_${esc(q)}" data-parent="${esc(q)}" data-was="${knownBase ? base : ''}">${opts}</select></div>`;
   });
   const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
-  return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents</div><div class="row2">${rows.join('')}</div>` +
+  return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents ${infoBtn(INFO.parent)}</div><div class="row2">${rows.join('')}</div>` +
     (masked ? '<p class="hint">"Keep as is": while someone is living, whether a parent is by birth, adoption or fostering stays private, so it isn\'t shown here.</p>' : '') : '';
 }
 const nameRowHTML = (v = '') => `<div class="namerow"><input class="fOtherName" value="${esc(v)}" autocomplete="off" aria-label="Earlier last name"><button type="button" class="rm" aria-label="Remove this last name">×</button></div>`;
@@ -1423,14 +1535,14 @@ function openAdd(id, opts = {}) {
     <form class="body form" id="addForm" novalidate>
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
         ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
-      <div class="field" id="fSibWrap" hidden><span class="lab">What kind of sibling?</span><div class="seg" id="fSib"><button type="button" data-v="full" aria-pressed="true">Full</button><button type="button" data-v="half" aria-pressed="false">Half</button><button type="button" data-v="step" aria-pressed="false">Step</button></div></div>
+      <div class="field" id="fSibWrap" hidden><span class="lab">What kind of sibling? ${infoBtn(INFO.sibling)}</span><div class="seg" id="fSib"><button type="button" data-v="full" aria-pressed="true">Full</button><button type="button" data-v="half" aria-pressed="false">Half</button><button type="button" data-v="step" aria-pressed="false">Step</button></div></div>
       <div class="field" id="fSibParWrap" hidden><label for="fSibPar" id="fSibParLab">Which parent do you share?</label><select id="fSibPar"></select><p class="hint" id="fSibHint" hidden></p></div>
-      <div class="field" id="fPcWrap" hidden><span class="lab" id="fPcLab">What kind of parent?</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
+      <div class="field" id="fPcWrap" hidden><span class="lab"><span id="fPcLab">What kind of parent?</span> ${infoBtn(INFO.parent)}</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
         <p class="hint" id="fPcHint" hidden>This takes one of the two parent spots. If the birth parent might be added later, add a step-parent as the parent's partner instead; the tree labels them Stepfather or Stepmother on its own.</p></div>
       <div class="field" id="fOtherWrap" hidden><label for="fOther" id="fOtherLab">Their other parent</label><select id="fOther"></select></div>
-      <div class="field" id="fKindWrap" hidden><span class="lab">Together as</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="former" aria-pressed="false">Former partners</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
+      <div class="field" id="fKindWrap" hidden><span class="lab">Together as ${infoBtn(INFO.couple)}</span><div class="seg" id="fKind"><button type="button" data-v="married" aria-pressed="true">Married</button><button type="button" data-v="partner" aria-pressed="false">Partners</button><button type="button" data-v="divorced" aria-pressed="false">Divorced</button><button type="button" data-v="former" aria-pressed="false">Former partners</button><button type="button" data-v="widowed" aria-pressed="false">Widowed</button></div></div>
       <div class="field" id="fKidsWrap" hidden><span class="lab" id="fKidsLab">Are they also the parent of…</span><div class="kids" id="fKids"></div></div>
-      ${self ? '' : `<div class="field"><span class="lab">Who are they?</span><div class="seg" id="fWhich"><button type="button" data-v="new" aria-pressed="true">Someone new</button><button type="button" data-v="existing" aria-pressed="false">Already in the tree</button></div></div>
+      ${self ? '' : `<div class="field"><span class="lab">Who are they? ${infoBtn(INFO.which)}</span><div class="seg" id="fWhich"><button type="button" data-v="new" aria-pressed="true">Someone new</button><button type="button" data-v="existing" aria-pressed="false">Already in the tree</button></div></div>
       <div id="fPickWrap" hidden><div class="field"><label for="fPickQ">Find them</label><input id="fPickQ" placeholder="Type a name, or tap one below" autocomplete="off"></div><div class="pick tall" id="fPickList"></div></div>`}
 ` : ''}
       ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
@@ -1731,10 +1843,77 @@ function pickPerson(title, sub, onPick, filter = () => true) {
   $('#qName').oninput = list; list(); setTimeout(() => $('#qName').focus(), 50);
 }
 $('#btnSearch').onclick = () => pickPerson('Find a person', 'Everyone in the tree, folded branches included.', id => { closePanel(); STATE.focus = id; render(); });
-$('#btnAll').onclick = () => { STATE.all = !STATE.all; $('#btnAll').setAttribute('aria-pressed', STATE.all); if (!STATE.all) STATE.open.clear(); render({ camera: false }); };
+// The Show menu (#btnAll) lives in app-levels.js.
 
 /* Names in the details card that point at another person (a spouse in the last-name history) open that person. */
 panel.addEventListener('click', e => { const a = e.target.closest('[data-goto]'); if (!a) return; e.preventDefault(); openPerson(a.dataset.goto); });
+
+/* =====================================================================
+ * How much to show (2026-11-22): Open all became a menu with four levels, each adding to the one before.
+ *   0 Close family   the default folding
+ *   1 Open buds      every bud on screen opened (the old Open all)
+ *   2 All relatives  plus every line of descent from an ancestor to its end: second cousins, great-aunts' grandchildren
+ *   3 Plus in-laws   plus everyone connected by marriage, all the way out (no +N left)
+ * The device remembers levels 0 to 2. "Plus in-laws" is big, so the next visit starts at Close family again.
+ * ===================================================================== */
+const LEVELS = ['Close family', 'Open buds', 'All relatives', 'Plus in-laws'];
+const LEVEL_INFO = [
+  `**Close family:** three generations up, two down, plus brothers, sisters and partners. Everyone else is folded into gold buds.`,
+  `**Open buds:** every bud on the screen, opened.`,
+  `**All relatives:** also everyone who shares an ancestor with the person in the middle, however distant, and their partners and children.`,
+  `**Plus in-laws:** everyone connected, in-laws' families included, all the way out. Big and busy. Your next visit starts back at Close family.`,
+  `A card with a dark **+3** has family this choice leaves out. Tap the number to put that person in the middle.`
+].join('\n');
+STATE.level = Math.max(0, Math.min(2, parseInt(store.get('roots_level'), 10) || 0));
+const levelMenu = document.createElement('div');
+levelMenu.className = 'levelmenu'; levelMenu.id = 'levelMenu'; levelMenu.hidden = true;
+levelMenu.setAttribute('role', 'menu'); levelMenu.setAttribute('aria-label', 'How much of the family to show');
+document.body.appendChild(levelMenu);
+function syncLevelBtn() {
+  const b = $('#btnAll'); if (!b) return;
+  b.setAttribute('aria-pressed', STATE.level > 0);
+  b.setAttribute('aria-label', 'Show: ' + LEVELS[STATE.level] + '. Choose how much of the family to show');
+  const l = b.querySelector('.lbl'); if (l) l.textContent = LEVELS[STATE.level];
+}
+function setLevel(lv) {
+  STATE.level = lv;
+  delete STATE.pathLevel;                 // a level picked by hand outlasts "Show it on the tree"
+  STATE.open.clear();
+  store.set('roots_level', String(lv >= 3 ? 0 : lv));
+  syncLevelBtn();
+  render({ camera: false });
+}
+function renderLevelMenu() {
+  levelMenu.innerHTML = `<div class="lmhead"><span>Show on the tree</span>${infoBtn(LEVEL_INFO, 'What each choice shows')}</div>` +
+    LEVELS.map((l, i) => `<button type="button" role="menuitemradio" aria-checked="${i === STATE.level}" data-lv="${i}"><span class="tick" aria-hidden="true"></span>${l}</button>`).join('');
+}
+function openLevelMenu() {
+  renderLevelMenu();
+  levelMenu.hidden = false;
+  const r = $('#btnAll').getBoundingClientRect(), w = levelMenu.offsetWidth;
+  levelMenu.style.top = (r.bottom + 6) + 'px';
+  levelMenu.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+  $('#btnAll').setAttribute('aria-expanded', 'true');
+  const cur = levelMenu.querySelector('[aria-checked="true"]'); if (cur) cur.focus({ preventScroll: true });
+}
+function closeLevelMenu() { levelMenu.hidden = true; const b = $('#btnAll'); if (b) b.setAttribute('aria-expanded', 'false'); }
+$('#btnAll').setAttribute('aria-haspopup', 'menu');
+$('#btnAll').setAttribute('aria-expanded', 'false');
+$('#btnAll').onclick = e => { e.stopPropagation(); if (levelMenu.hidden) openLevelMenu(); else closeLevelMenu(); };
+levelMenu.addEventListener('click', e => {
+  const b = e.target.closest('[data-lv]'); if (!b) return;
+  closeLevelMenu();
+  const lv = +b.dataset.lv;
+  if (lv !== STATE.level || STATE.open.size || STATE.pathLevel !== undefined) setLevel(lv);
+});
+levelMenu.addEventListener('keydown', e => {
+  const items = [...levelMenu.querySelectorAll('[data-lv]')], i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const n = items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]; n && n.focus(); }
+  if (e.key === 'Escape') { closeLevelMenu(); $('#btnAll').focus(); }
+});
+document.addEventListener('pointerdown', e => { if (!levelMenu.hidden && !levelMenu.contains(e.target) && !$('#btnAll').contains(e.target) && !infoPop.contains(e.target)) closeLevelMenu(); }, true);
+addEventListener('resize', () => { if (!levelMenu.hidden) closeLevelMenu(); });
+syncLevelBtn();
 
 /* ---- key: every symbol and line, drawn the way the tree draws it ---- */
 function keyCard(opts = {}) {
@@ -2386,9 +2565,11 @@ function showPathOnTree(r) {
   if (STATE.view === 'wheel') setView('tree');
   STATE.path = new Set(pathPeople(r));
   STATE.focus = r.kind === 'blood' && r.l.da && r.l.db ? r.l.apex[0] : r.b;
-  // Open every bud so the whole path can draw; the next tap puts Open all back the way it was.
-  if (STATE.pathAll === undefined) STATE.pathAll = STATE.all;
-  STATE.all = true; $('#btnAll').setAttribute('aria-pressed', true);
+  // Step up to the lowest level that draws the whole path; the next tap puts the level back the way it was.
+  if (STATE.pathLevel === undefined) STATE.pathLevel = STATE.level;
+  const need = [...STATE.path];
+  for (let lv = STATE.level; lv <= 3; lv++) { STATE.level = lv; const ns = layout().nodes; if (need.every(id => ns.has(id))) break; }
+  syncLevelBtn();
   render();
 }
 function markPath() {
@@ -2403,7 +2584,7 @@ render = function (opts = {}) { const out = renderBeforePath(opts); if (STATE.vi
 stage.addEventListener('pointerdown', () => {
   if (!STATE.path) return;
   STATE.path = null; markPath();
-  if (STATE.pathAll !== undefined) { const was = STATE.pathAll; delete STATE.pathAll; if (!was) { STATE.all = false; STATE.open.clear(); $('#btnAll').setAttribute('aria-pressed', false); render({ camera: false }); } }
+  if (STATE.pathLevel !== undefined) { const was = STATE.pathLevel; delete STATE.pathLevel; if (was !== STATE.level) { STATE.level = was; STATE.open.clear(); syncLevelBtn(); render({ camera: false }); } }
 });
 
 /* =====================================================================
@@ -2426,7 +2607,7 @@ const INTRO = [
     <h1>How it works</h1>
     <ul class="howto">
       <li><span class="ic">${ICON.bud.replace('currentColor', '#A9822F')}</span><div><b>Tap anyone to see their story.</b><span>Names, dates and memories for those who've passed. Living relatives show by name only.</span></div></li>
-      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it. A small +3 on a card means more family there: tap it to center the tree on them.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it, or use the menu at the top that starts as Close family to open more at once. A small +3 on a card means more family there: tap it to center the tree on them.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><b>Add who you know.</b><span>Especially the relatives we've lost. A first name is enough to start. ${OWNER_NAME} confirms each addition.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></span><div><b>Not sure what a line means?</b><span>Tap Key at the top for every symbol and line type.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
@@ -2584,7 +2765,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '7c90ddd73c';
+  const BUILD = 'e67114dc4c';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

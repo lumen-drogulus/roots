@@ -148,13 +148,19 @@ async function loadQueue() {
   try { const [q] = await Promise.all([api('admin_queue'), loadTree()]); showQueue(q); }
   catch (err) { $('#queue').replaceChildren(retryBox(err.message, loadQueue)); }
 }
+/* What merging does, beside the only two actions here that are hard to reverse by hand (2026-11-22). */
+const INFO_ADMIN = {
+  dup: `This new entry looks like someone already in the tree.\n**Same person: merge** folds it into the existing person. The links it came with move over and still wait for your approval.\nIf they're different people, ignore this and approve or reject as usual.`,
+  merge: `**Merge into** folds this person into the one you pick. The one you pick stays; links, photos and corrections move over to them.\nUse it for duplicates, like the same grandparent added by two relatives.\nYou can undo it from this list.`,
+  unmerge: `**Undo merge** brings this person back as they were, with their own links, photos and corrections.`
+};
 function describe(it) {
   const r = it.row;
   switch (it.kind) {
     case 'person': {
       const facts = [r.living && `Living: ${r.living}`, r.birth_date && `Born ${fuzzy(r.birth_date)}${r.birth_place ? ', ' + r.birth_place : ''}`,
         r.death_date && `Died ${fuzzy(r.death_date)}${r.death_place ? ', ' + r.death_place : ''}`, r.source && `Source: ${r.source}`].filter(Boolean);
-      const dups = (it.possible_duplicates || []).map(d => `<span>Might be <b>${esc(d.label)}</b>${d.birth_date ? ' (born ' + esc(fuzzy(d.birth_date)) + ')' : ''}</span><button class="btn" data-merge="${esc(d.id)}">Same person: merge</button>`).join('');
+      const dups = (it.possible_duplicates || []).map(d => `<span>Might be <b>${esc(d.label)}</b>${d.birth_date ? ' (born ' + esc(fuzzy(d.birth_date)) + ')' : ''}</span><button class="btn" data-merge="${esc(d.id)}">Same person: merge</button>${infoBtn(INFO_ADMIN.dup)}`).join('');
       return { label: 'New person', what: esc(personName(r)), detail: esc(facts.join(' · ')) + (r.notes ? `<div class="story">${esc(r.notes)}</div>` : '') + warnBox(personWarnings(r)) + (dups ? `<div class="dupwarn">${dups}</div>` : ''), edit: true };
     }
     case 'relationship': {
@@ -269,8 +275,8 @@ function showPeople() {
       <span class="meta">${esc([p.birth_date && 'b. ' + fuzzy(p.birth_date), p.death_date && 'd. ' + fuzzy(p.death_date), p.living_computed ? 'living' : 'passed', p.status === 'merged' ? 'merged' : ''].filter(Boolean).join(' · '))}</span>
       <span class="spacer"></span>
       ${p.status === 'merged'
-        ? '<button class="btn" data-a="unmerge">Undo merge</button>'
-        : `<button class="btn" data-a="links">Links</button><select data-a="mergesel" aria-label="Merge ${esc(p.first_name)} into"><option value="">Merge into…</option>${opts}</select><button class="btn bad" data-a="retract">Take back</button>`}
+        ? '<button class="btn" data-a="unmerge">Undo merge</button>' + infoBtn(INFO_ADMIN.unmerge)
+        : `<button class="btn" data-a="links">Links</button><select data-a="mergesel" aria-label="Merge ${esc(p.first_name)} into"><option value="">Merge into…</option>${opts}</select>${infoBtn(INFO_ADMIN.merge)}<button class="btn bad" data-a="retract">Take back</button>`}
     </div>`).join('') : '<p class="empty">Nobody here yet.</p>');
   $('#pSearch').oninput = () => { const pos = $('#pSearch').selectionStart; showPeople(); $('#pSearch').focus(); $('#pSearch').setSelectionRange(pos, pos); };
   document.querySelectorAll('.prow').forEach(row => {
@@ -342,12 +348,74 @@ if (KEY) {
   });
 }
 
+/* =====================================================================
+ * Info buttons (2026-11-22): a small circled "i" that explains a control in a few lines.
+ * Tap or click opens it, a tap anywhere else closes it, and with a mouse it also opens on hover.
+ * Anything with data-info works the same way, so a tag on a card ("Unconfirmed") can explain itself.
+ * Text is ours, never a relative's: each line of the text becomes its own paragraph, and **bold** is the only markup.
+ * ===================================================================== */
+const INFO_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 9v5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="10" cy="6.1" r="1.05" fill="currentColor"/></svg>';
+const infoAttr = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// The tags on cards (the card is itself a button, so the tag answers taps and hover but isn't a second tab stop).
+const TAG_INFO = typeof OWNER_NAME === 'undefined' ? {} : {
+  pending: infoAttr(`Something you added. Only you see it until ${OWNER_NAME} confirms it.\nTap the card to change it or take it back.`),
+  edit: infoAttr(`You changed something about this person. You see your version; everyone else sees the old one until ${OWNER_NAME} confirms it.\nTap the card to change it again or take it back.`)
+};
+function infoBtn(text, label = 'What this means') {
+  const t = infoAttr(text);
+  return `<button type="button" class="infobtn" data-info="${t}" aria-label="${label}" aria-expanded="false">${INFO_ICON}</button>`;
+}
+const infoPop = document.createElement('div');
+infoPop.className = 'infopop'; infoPop.setAttribute('role', 'tooltip'); infoPop.id = 'infoPop'; infoPop.hidden = true;
+document.body.appendChild(infoPop);
+let infoFor = null, infoPinned = false;
+function infoHTML(text) {
+  return text.split('\n').filter(s => s.trim()).map(s => '<p>' + s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>') + '</p>').join('');
+}
+function showInfo(el, pinned) {
+  if (infoFor && infoFor !== el) infoFor.setAttribute('aria-expanded', 'false');
+  infoFor = el; infoPinned = !!pinned;
+  infoPop.innerHTML = infoHTML(el.dataset.info || '');
+  infoPop.hidden = false;
+  el.setAttribute('aria-expanded', 'true'); el.setAttribute('aria-describedby', 'infoPop');
+  // Below the button when there's room, else above; kept inside the screen.
+  const r = el.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+  const w = Math.min(320, vw - 24); infoPop.style.width = w + 'px';
+  const ph = infoPop.offsetHeight;
+  const left = Math.max(12, Math.min(vw - w - 12, r.left + r.width / 2 - w / 2));
+  const top = r.bottom + 8 + ph <= vh - 8 ? r.bottom + 8 : Math.max(8, r.top - 8 - ph);
+  infoPop.style.left = left + 'px'; infoPop.style.top = top + 'px';
+}
+function hideInfo() {
+  if (infoFor) { infoFor.setAttribute('aria-expanded', 'false'); infoFor.removeAttribute('aria-describedby'); }
+  infoFor = null; infoPinned = false; infoPop.hidden = true;
+}
+// Capture phase, so a tap on an info target never also opens the card or presses the button it sits beside.
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-info]');
+  if (t) { e.preventDefault(); e.stopPropagation(); if (infoFor === t && infoPinned) hideInfo(); else showInfo(t, true); return; }
+  if (infoFor && !infoPop.contains(e.target)) hideInfo();
+}, true);
+document.addEventListener('pointerdown', e => { if (infoFor && !infoPop.contains(e.target) && !(e.target.closest && e.target.closest('[data-info]'))) hideInfo(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && infoFor) { const f = infoFor; hideInfo(); f.focus(); } });
+addEventListener('resize', () => { if (infoFor) hideInfo(); });
+document.addEventListener('scroll', () => { if (infoFor) hideInfo(); }, true);
+if (matchMedia('(hover: hover)').matches) {
+  document.addEventListener('mouseover', e => { const t = e.target.closest && e.target.closest('[data-info]'); if (t && !infoPinned && infoFor !== t) showInfo(t, false); });
+  document.addEventListener('mouseout', e => {
+    if (!infoFor || infoPinned) return;
+    const to = e.relatedTarget;
+    if (to && (infoFor.contains(to) || infoPop.contains(to))) return;
+    if (e.target.closest && (e.target.closest('[data-info]') === infoFor || infoPop.contains(e.target))) hideInfo();
+  });
+}
+
 /* ---- Stay current. GitHub Pages lets browsers keep every file for about 10 minutes, so right after a deploy a
  * phone can run yesterday's page. On load (and when the page comes back to the front) ask for version.json, which
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '7c90ddd73c';
+  const BUILD = 'e67114dc4c';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

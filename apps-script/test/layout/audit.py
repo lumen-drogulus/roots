@@ -35,25 +35,46 @@ JS = """async () => {
       if (a.g !== b.g || between.length) res.apart.add(`[${ns(c)}] ${ns(e.child)}'s parents ${ns(a.id)} and ${ns(b.id)} have ${between.map(n=>ns(n.id)).join(', ')} between them`);
     }
   }
-  // reachability: start at the default center, open buds (Open all), follow every +N
+  // reachability: start at the default center, at each level up to All relatives, follow every +N shown with buds open
   const start = STATE.focus, seen = new Set([start]), reached = new Set(), q = [start];
   while (q.length) {
     const c = q.shift(); STATE.focus = c; STATE.open.clear();
-    for (const all of [false, true]) {
-      STATE.all = all; const L = layout(); check(L, c);
-      for (const n of L.nodes.values()) if (n.kind === 'person') { reached.add(n.id); if (all && n.more && !seen.has(n.id)) { seen.add(n.id); q.push(n.id); } }
+    for (const lv of [0, 1, 2]) {
+      STATE.level = lv; const L = layout(); check(L, c);
+      for (const n of L.nodes.values()) if (n.kind === 'person') { reached.add(n.id); if (lv === 1 && n.more && !seen.has(n.id)) { seen.add(n.id); q.push(n.id); } }
     }
   }
-  STATE.focus = start; STATE.all = false;
+  // levels only ever add: what a lower level draws, every higher level draws too
+  const ladder = [];
+  // Plus in-laws: from a sample of centers, everyone connected is drawn, nobody overlaps, no +N is left
+  const conn = c => { const s = new Set([c]), st = [c]; while (st.length) { const x = st.pop(); [...parentsOf(x), ...childrenOf(x), ...partnersOf(x).map(y => y.id)].forEach(y => { if (!s.has(y)) { s.add(y); st.push(y); } }); } return s; };
+  const sample = [start, ...people.filter((x, i) => i % Math.max(1, Math.floor(people.length / 24)) === 0)];
+  const webMiss = [], webMore = [], webApart = new Set();
+  let webMs = 0;
+  for (const c of new Set(sample)) {
+    if (P(c).placeholder) continue;
+    STATE.focus = c; STATE.open.clear();
+    const sets = [0, 1, 2, 3].map(lv => { STATE.level = lv; return new Set([...layout().nodes.values()].filter(n => n.kind === 'person').map(n => n.id)); });
+    for (let lv = 1; lv < 4; lv++) for (const x of sets[lv - 1]) if (!sets[lv].has(x)) ladder.push(`[${ns(c)}] level ${lv} drops ${ns(x)}`);
+    STATE.level = 3; const t0 = performance.now(); const L = layout(); webMs = Math.max(webMs, performance.now() - t0);
+    const before = res.apart.size; check(L, c);
+    [...res.apart].slice(before).forEach(a => webApart.add(a));
+    for (const a of webApart) res.apart.delete(a);
+    for (const x of conn(c)) if (!L.nodes.has(x)) webMiss.push(`[${ns(c)}] ${ns(x)}`);
+    for (const n of L.nodes.values()) if (n.more) webMore.push(`[${ns(c)}] ${ns(n.id)} +${n.more}`);
+  }
+  STATE.focus = start; STATE.level = 0;
   // every person centered: their own close family always drawn?
   const famMiss = [];
-  for (const c of people) { if (P(c).placeholder) continue; STATE.focus = c; STATE.all = false; STATE.open.clear(); const L = layout();
+  for (const c of people) { if (P(c).placeholder) continue; STATE.focus = c; STATE.level = 0; STATE.open.clear(); const L = layout();
     const fam = [...parentsOf(c), ...childrenOf(c), ...partnersOf(c).map(x => x.id), ...siblingsOf(c).map(x => x.id)];
     const budded = new Set([...L.nodes.values()].filter(n => n.kind === 'bud').map(n => n.key));
     fam.forEach(x => { if (!L.nodes.has(x) && !(budded.has('fam:' + x))) famMiss.push(ns(c) + ' -> ' + ns(x)); }); }
   STATE.focus = start;
   const unreached = people.filter(x => !reached.has(x) && !P(x).placeholder).map(ns);
-  return { people: people.length, reached: reached.size, unreached, centersVisited: seen.size, overlaps: [...res.overlaps].slice(0, 12), overlapCount: res.overlaps.size, apart: [...res.apart].slice(0, 12), apartCount: res.apart.size, famMiss: famMiss.slice(0, 10), famMissCount: famMiss.length };
+  return { people: people.length, reached: reached.size, unreached, centersVisited: seen.size, overlaps: [...res.overlaps].slice(0, 12), overlapCount: res.overlaps.size, apart: [...res.apart].slice(0, 12), apartCount: res.apart.size, famMiss: famMiss.slice(0, 10), famMissCount: famMiss.length,
+    ladder: ladder.slice(0, 10), ladderCount: ladder.length, webMiss: webMiss.slice(0, 10), webMissCount: webMiss.length, webMore: webMore.slice(0, 10), webMoreCount: webMore.length,
+    webApartS: [...webApart].slice(0, 14), webApart: webApart.size, webMs: Math.round(webMs) };
 }"""
 
 def up(port, tries=40):
@@ -79,11 +100,14 @@ async def run():
                     errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
                     await pg.goto(f'http://localhost:{SITE}/index.html?nointro&api=http://localhost:{port}'); await pg.wait_for_timeout(3000)
                     r = await pg.evaluate(JS); await pg.close()
-                    probs = len(r['unreached']) + r['overlapCount'] + r['apartCount'] + r['famMissCount'] + len(errs)
+                    probs = len(r['unreached']) + r['overlapCount'] + r['apartCount'] + r['famMissCount'] + r['ladderCount'] + r['webMissCount'] + r['webMoreCount'] + len(errs)
                     bad += probs
                     print(f"{'ok  ' if not probs else 'FAIL'} {name}: {r['people']} people, {r['centersVisited']} centers checked, "
                           f"unreachable {len(r['unreached'])}, overlaps {r['overlapCount']}, split couples {r['apartCount']}, missing close family {r['famMissCount']}, page errors {len(errs)}")
-                    for k in ('unreached', 'overlaps', 'apart', 'famMiss'):
+                    print(f"       levels: dropped going up {r['ladderCount']}; plus in-laws: missing {r['webMissCount']}, +N left {r['webMoreCount']}, "
+                          f"split couples {r['webApart']} (allowed there), slowest layout {r['webMs']} ms")
+                    if os.environ.get('WEBDEBUG'): [print('        web', x) for x in r['webApartS']]
+                    for k in ('unreached', 'overlaps', 'apart', 'famMiss', 'ladder', 'webMiss', 'webMore'):
                         for x in r[k][:5]: print('       ', k, x)
                     for e in errs[:3]: print('        error', e)
                 finally:

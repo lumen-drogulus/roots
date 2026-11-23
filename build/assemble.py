@@ -28,9 +28,9 @@ body = rep(body, '<div class="scrim" id="scrim"></div>', '''<div class="state" i
 <div class="banner paused" id="paused" hidden>Adding is paused for a little while. You can still look around.</div>
 
 <div class="scrim" id="scrim"></div>''')
-# "Show all" opens every bud, but in a big family it can't show everyone; the button says what it does.
-body = rep(body, 'aria-label="Show all branches"', 'aria-label="Open all branches"')
-body = rep(body, '<span class="lbl">Show all</span>', '<span class="lbl">Open all</span>')
+# "Show all" became a menu of four levels (2026-11-22, see build/app-levels.js); the label shows the current one.
+body = rep(body, 'aria-label="Show all branches"', 'aria-label="Choose how much of the family to show"')
+body = rep(body, '<span class="lbl">Show all</span>', '<span class="lbl">Close family</span><svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 # Wheel view (2026-11-22): a Tree / Wheel switch in the top bar, and the wheel's own layer beside the tree's.
 body = rep(body, '  <button class="iconbtn" id="btnSearch"', '''  <div class="viewsw" role="group" aria-label="View">
     <button id="btnViewTree" aria-pressed="true" aria-label="Tree view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="4" rx="1.5"/><rect x="3" y="16" width="6" height="4" rx="1.5"/><rect x="15" y="16" width="6" height="4" rx="1.5"/><path d="M12 7v4M6 16v-3h12v3"/></svg><span class="lbl">Tree</span></button>
@@ -48,7 +48,10 @@ engine = rep(engine, "  data.rels.forEach(([t, a, b, sub, pend]) => {", "  data.
 engine = rep(engine, "const isLiving = p => !!p.living || (!p.died && !p.placeholder && !(p.born && +String(p.born).replace(/\\D/g, '') < new Date().getFullYear() - 110));",
              "const isLiving = p => !p.placeholder && !!p.living;")
 engine = rep(engine, "const STATE = { viewer: SAMPLE.viewer, focus: SAMPLE.viewer, open: new Set(), all: false, rootsBelow: true, selected: null };",
-             "const STATE = { viewer: null, owner: null, focus: null, open: new Set(), all: false, rootsBelow: true, selected: null };")
+             "const STATE = { viewer: null, owner: null, focus: null, open: new Set(), level: 0, rootsBelow: true, selected: null };")
+# Levels (2026-11-22): 0 close family, 1 every bud open, 2 all relatives, 3 plus in-laws. Buds count as open from level 1.
+engine = rep(engine, "const isOpen = k => STATE.all || STATE.open.has(k);", "const isOpen = k => STATE.level >= 1 || STATE.open.has(k);")
+engine = rep(engine, "  if (!STATE.all) for (const key of STATE.open) {", "  if (STATE.level < 1) for (const key of STATE.open) {")
 engine = rep(engine, "  const v = STATE.viewer;\n  if (id === v) return 'You';", "  const v = STATE.viewer;\n  if (!v) return '';\n  if (id === v) return 'You';")
 engine = rep(engine, "$('#btnHome').onclick = () => { closePanel(); STATE.focus = STATE.viewer; render(); };\n", "")
 engine = rep(engine, "function render(opts = {}) {\n", "function render(opts = {}) {\n  if (!STATE.focus || !G.people.has(STATE.focus)) return;\n")
@@ -76,7 +79,7 @@ engine = rep(engine, "function displayName(p) {",
   "function cardName(p) {\n  if (p.placeholder) return 'Unknown';\n  const nickOf = x => { const n = (x.nicknames || '').split(',')[0].trim(); return n && !sameNameE(n, x.first) ? n : ''; };\n  const short = x => [x.first, nickOf(x) ? `\"${nickOf(x)}\"` : x.middle ? x.middle.trim()[0] + '.' : '', x.last].filter(Boolean).join(' ');\n  const base = short(p);\n  // Two people who would read the same (a father and son both going by Jonny) also get their middle initial.\n  const clash = nickOf(p) && p.middle && [...G.people.values()].some(x => x.id !== p.id && !x.placeholder && short(x) === base);\n  return clash ? [p.first, `\"${nickOf(p)}\"`, p.middle.trim()[0] + '.', p.last].join(' ') : base;\n}\nconst sameNameE = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();\nfunction displayName(p) {")
 engine = rep(engine, "<span class=\"nm\">${p.placeholder ? 'Unknown' : esc(displayName(p))}</span>", "<span class=\"nm\">${esc(cardName(p))}</span>")
 # A relative's own unconfirmed changes to a confirmed person: same dashed card, tagged "Your edit".
-engine = rep(engine, "+ (p.pending ? '<span class=\"tag\">Unconfirmed</span>' : '')", "+ (p.pending ? '<span class=\"tag\">Unconfirmed</span>' : p.edits ? '<span class=\"tag\">Your edit</span>' : '')")
+engine = rep(engine, "+ (p.pending ? '<span class=\"tag\">Unconfirmed</span>' : '')", "+ (p.pending ? '<span class=\"tag\" data-info=\"' + TAG_INFO.pending + '\">Unconfirmed</span>' : p.edits ? '<span class=\"tag\" data-info=\"' + TAG_INFO.edit + '\">Your edit</span>' : '')")
 engine = rep(engine, "(p.pending ? ' pending' : '')", "(p.pending || p.edits ? ' pending' : '')")
 # A parent's other partner is a step-parent to the centered person: show them, don't fold them into a bud.
 engine = rep(engine, "if (others.length) { if (isOpen('op:' + id)) t.extras.push(", "if (others.length) { if (depth === 1 || isOpen('op:' + id)) t.extras.push(")
@@ -158,6 +161,17 @@ engine = rep(engine, "  /* ---- married-in families (partners of the centered pe
     ks.forEach(k => { const o = parentsOf(k).find(pp => prt.includes(pp)) || ''; if (!byOther.has(o)) byOther.set(o, []); byOther.get(o).push(k); });
     for (const [o, kids] of byOther) {
       const mid = o ? (n.x + nodes.get(o).x) / 2 : n.x;
+      if (STATE.level >= 2) {
+        // All relatives: each cousin with their partners and every generation below, the descendants' couples layout.
+        const units = kids.map(k => descUnit(k, 1));
+        const total = units.reduce((t, u) => t + u.L + u.R, 0) + (units.length - 1) * GAP;
+        let kx = mid - total / 2;
+        const block = [];
+        units.forEach(u => { descPlace(u, kx + u.L, n.g - 1, block); kx += u.L + u.R + GAP; });
+        const seenB = new Set();
+        placeBlock(block.filter(b => !nodes.has(b.id) && !seenB.has(b.id) && seenB.add(b.id)), dir);
+        continue;
+      }
       let kx = mid - (kids.length * CW + (kids.length - 1) * GAP) / 2;
       placeBlock(kids.map(k => { const c = { id: k, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return c; }), dir);
     }
@@ -254,6 +268,44 @@ engine = rep(engine, between(engine, "  /* ---- the centered person's row", "  /
 
 """)
 
+# ---- "Plus in-laws" (level 3): everyone connected. Starting from what's drawn, nearest first, each person brings in
+# their missing parents (row above), partners and siblings (beside, away from the middle) and children (row below,
+# under the couple). No slots, so it reads as a web; the card positions still never overlap.
+engine = rep(engine, "  /* ---- edges ---- */\n  const placed = new Set(nodes.keys());",
+  """  /* ---- plus in-laws: everyone connected ---- */
+  if (STATE.level >= 3) {
+    const queue = [...nodes.values()].filter(n => n.kind === 'person').sort((a, b) => Math.abs(a.g) - Math.abs(b.g) || Math.abs(a.x) - Math.abs(b.x));
+    const fresh = ids => [...new Set(ids)].filter(x => !nodes.has(x) && G.people.has(x));
+    const put = (list, dir) => { const blk = list.filter(b => !nodes.has(b.id)); if (!blk.length) return; placeBlock(blk, dir); blk.forEach(b => queue.push(nodes.get(b.id))); };
+    for (let qi = 0; qi < queue.length && qi < 20000; qi++) {
+      const n = queue[qi], dir = n.x < 0 ? -1 : 1;
+      const pars = fresh(parentsOf(n.id));
+      // A missing parent whose partner is already drawn goes beside that partner, so the couple stays together.
+      const mate = parentsOf(n.id).find(pp => nodes.has(pp) && pars.some(f => partnersOf(pp).some(x => x.id === f)));
+      if (mate) {
+        const m = nodes.get(mate), md = m.x <= n.x ? 1 : -1;
+        let px = m.x; put(pars.map(id => { px += md * (CW + CG); return { id, x: px, y: m.y, g: m.g, kind: 'person', partnerOf: mate }; }), md);
+      } else if (pars.length) put(pars.map((id, i) => ({ id, x: n.x + (i - (pars.length - 1) / 2) * (CW + CG), y: genY(n.g + 1), g: n.g + 1, kind: 'person' })), dir);
+      const pts = fresh(partnersOf(n.id).map(x => x.id));
+      if (pts.length) { let px = n.x; put(pts.map(id => { px += dir * (CW + CG); return { id, x: px, y: genY(n.g), g: n.g, kind: 'person', partnerOf: n.id }; }), dir); }
+      const sibsW = fresh(siblingsOf(n.id).map(x => x.id));
+      if (sibsW.length) { let sx = n.x; put(sibsW.map(id => { sx += dir * (CW + GAP); return { id, x: sx, y: genY(n.g), g: n.g, kind: 'person' }; }), dir); }
+      const kids = fresh(childrenOf(n.id));
+      if (kids.length) {
+        const byOther = new Map();
+        kids.forEach(k => { const o = parentsOf(k).find(pp => pp !== n.id && nodes.has(pp) && nodes.get(pp).g === n.g) || ''; if (!byOther.has(o)) byOther.set(o, []); byOther.get(o).push(k); });
+        for (const [o, ks] of byOther) {
+          const mid = o ? (n.x + nodes.get(o).x) / 2 : n.x;
+          let kx = mid - (ks.length * CW + (ks.length - 1) * GAP) / 2;
+          put(ks.map(id => { const b = { id, x: kx + CW / 2, y: genY(n.g - 1), g: n.g - 1, kind: 'person' }; kx += CW + GAP; return b; }), dir);
+        }
+      }
+    }
+  }
+
+  /* ---- edges ---- */
+  const placed = new Set(nodes.keys());""")
+
 # ---- "+N" on any card whose close family isn't on screen and isn't behind a bud. Tap it to center there. ----
 # Centering on anyone always draws their parents, partners, children and siblings, so this reaches everyone,
 # including family shapes the layout has no special place for.
@@ -261,7 +313,7 @@ engine = rep(engine, "  // which opened groups hang from which card, so each can
   """  // close family that no bud on this screen would reveal: shown as "+N", tap to center there.
   // "Reveal" is everyone drawn with every bud open (one extra layout pass, about a millisecond).
   let reveal = placed;
-  if (!STATE.all) { STATE.all = true; try { reveal = new Set(layout().nodes.keys()); } finally { STATE.all = false; } }
+  if (STATE.level < 1) { STATE.level = 1; try { reveal = new Set(layout().nodes.keys()); } finally { STATE.level = 0; } }
   for (const n of nodes.values()) {
     if (n.kind !== 'person' || n.id === F || P(n.id).placeholder) continue;
     const fam = [...parentsOf(n.id), ...childrenOf(n.id), ...partnersOf(n.id).map(x => x.id), ...siblingsOf(n.id).map(x => x.id)];
@@ -310,8 +362,10 @@ engine = rep(engine, "  if (path === 'UP') return w('Stepfather', 'Stepmother', 
 engine = rep(engine, "  if (path === 'UPD' && !siblingsOf(v).some(x => x.id === id))", "  if (path === 'UPD' && ptSub(chain[0], chain[1]) !== 'former' && !siblingsOf(v).some(x => x.id === id))")
 engine = rep(engine, "  if (path === 'PD') return w('Stepson', 'Stepdaughter', 'Stepchild');", "  if (path === 'PD' && ptSub(v, chain[0]) !== 'former') return w('Stepson', 'Stepdaughter', 'Stepchild');")
 ui = open('build/app-ui.js').read()
+assert "STATE.all" not in ui
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
-app = open('build/app-data.js').read() + '\n' + engine + '\n' + ui + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-related.js').read() + '\n' + open('build/app-boot.js').read()
+app = open('build/app-data.js').read() + '\n' + open('build/app-info.js').read() + '\n' + engine + '\n' + ui + '\n' + open('build/app-levels.js').read() + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-related.js').read() + '\n' + open('build/app-boot.js').read()
+assert 'STATE.all' not in app, 'STATE.all left over: ' + app[app.index('STATE.all') - 200:app.index('STATE.all') + 50]
 # Busy = a form or card is open: the freshness check waits rather than reload under someone's typing.
 app += "\nwindow.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || saving;\n"
 
@@ -320,6 +374,9 @@ import hashlib
 fresh = open('build/fresh.js').read()
 admin_js = open('assets/admin.js').read()
 admin_js = re.sub(r"\n/\* ---- Stay current\..*\Z", "", admin_js, flags=re.S).rstrip() + "\n"
+# The approvals page shares the tree page's info buttons (merge and undo explain themselves); appended each build.
+admin_js = re.sub(r"\n/\* =+\n \* Info buttons \(2026-11-22\).*\Z", "", admin_js, flags=re.S).rstrip() + "\n"
+admin_js += "\n" + open('build/app-info.js').read()
 hx = hashlib.sha256()
 for part in (app, style, open('index.html').read(), re.sub(r'\?v=\w+', '', open('admin.html').read()), admin_js, open('assets/admin.css').read(), open('config.js').read(), fresh):
     hx.update(part.encode())

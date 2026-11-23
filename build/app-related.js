@@ -330,9 +330,11 @@ function showPathOnTree(r) {
   if (STATE.view === 'wheel') setView('tree');
   STATE.path = new Set(pathPeople(r));
   STATE.focus = r.kind === 'blood' && r.l.da && r.l.db ? r.l.apex[0] : r.b;
-  // Open every bud so the whole path can draw; the next tap puts Open all back the way it was.
-  if (STATE.pathAll === undefined) STATE.pathAll = STATE.all;
-  STATE.all = true; $('#btnAll').setAttribute('aria-pressed', true);
+  // Step up to the lowest level that draws the whole path; the next tap puts the level back the way it was.
+  if (STATE.pathLevel === undefined) STATE.pathLevel = STATE.level;
+  const need = [...STATE.path];
+  for (let lv = STATE.level; lv <= 3; lv++) { STATE.level = lv; const ns = layout().nodes; if (need.every(id => ns.has(id))) break; }
+  syncLevelBtn();
   render();
 }
 function markPath() {
@@ -347,5 +349,5 @@ render = function (opts = {}) { const out = renderBeforePath(opts); if (STATE.vi
 stage.addEventListener('pointerdown', () => {
   if (!STATE.path) return;
   STATE.path = null; markPath();
-  if (STATE.pathAll !== undefined) { const was = STATE.pathAll; delete STATE.pathAll; if (!was) { STATE.all = false; STATE.open.clear(); $('#btnAll').setAttribute('aria-pressed', false); render({ camera: false }); } }
+  if (STATE.pathLevel !== undefined) { const was = STATE.pathLevel; delete STATE.pathLevel; if (was !== STATE.level) { STATE.level = was; STATE.open.clear(); syncLevelBtn(); render({ camera: false }); } }
 });

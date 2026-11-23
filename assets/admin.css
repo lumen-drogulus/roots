@@ -86,3 +86,13 @@ a.btn { text-decoration: none; color: var(--ink); }
 .lrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(29, 43, 36, .04); }
 .lrow > span { flex: 1; min-width: 180px; }
 .lrow .confirm { flex-basis: 100%; }
+
+/* Info buttons (2026-11-22), the same as on the tree page. */
+.infobtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--gilt); cursor: pointer; position: relative; flex: none; }
+.infobtn::before { content: ''; position: absolute; inset: -8px; }
+.infobtn svg { width: 18px; height: 18px; }
+.infobtn:hover, .infobtn[aria-expanded="true"] { color: var(--ink); }
+.infopop { position: fixed; z-index: 60; padding: 12px 14px; border-radius: 12px; background: var(--ink); color: #FFFDF9; font-size: 13.5px; line-height: 1.45; box-shadow: 0 8px 24px rgba(23, 36, 30, .28); }
+.infopop p { margin: 0; }
+.infopop p + p { margin-top: 7px; }
+.infopop b { color: #C9A35A; font-weight: 600; }
