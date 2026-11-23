@@ -7,6 +7,8 @@ const t = makeEnv();
 t.run('setup');
 const seed = JSON.parse(fs.readFileSync(process.env.SEED));
 for (const k of Object.keys(seed)) { const d = t.sheets[k]._data; d.length = 0; seed[k].forEach(r => d.push(r)); }
+// Seeds saved before a column was added (adoption_shown, kind, mime: 2026-11-22) get it appended, as the real Sheet does.
+for (const k of Object.keys(seed)) { const d = t.sheets[k]._data; t.env.SCHEMA[k].forEach(c => { if (!d[0].includes(c)) d.forEach((r, i) => r.push(i ? '' : c)); }); }
 t.props.OWNER_PERSON_ID = process.env.OWNER;
 http.createServer((req, res) => {
   const send = (c, b) => { res.writeHead(c, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }); res.end(b); };

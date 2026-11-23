@@ -7,9 +7,12 @@
  * of the EXISTING deployment (Deploy > Manage deployments > edit > New version).
  * Never create a second deployment: a new URL breaks the app.
  *
- * Privacy is enforced here and only here. The public tree is built from a
- * stripped copy of the data; private fields never leave this script for
- * anyone except the admin key holder.
+ * Privacy is enforced here and only here. Three views of the tree (2026-11-22, Jonny):
+ *   owner   the admin key holder: every field.
+ *   family  a relative whose "this is me" Jonny approved: living people's birthdays, birthplaces, notes and
+ *           partnership dates too.
+ *   public  anyone else with the link: names, gender, birth year and sources for living people.
+ * Private fields never leave this script for a view that may not see them.
  */
 
 var CONFIG = {
@@ -18,7 +21,7 @@ var CONFIG = {
   LIVING_CUTOFF_YEARS: 110,        // born more than this many years ago => treated as deceased
   MAX_ITEMS_PER_SUBMIT: 60,
   MAX_ITEMS_PER_DAY: 300,          // per contributor, rolling 24h
-  MAX_PHOTO_BYTES: 5 * 1024 * 1024,
+  MAX_PHOTO_BYTES: 10 * 1024 * 1024,   // photos arrive shrunk (well under 2 MB); PDFs and HEIC/TIFF originals use the room
   MAX_TEXT: 300,
   MAX_NOTES: 5000,
   REJECTED_LOOKBACK_DAYS: 30
@@ -27,13 +30,13 @@ var CONFIG = {
 var SCHEMA = {
   People: ['id', 'status', 'first_name', 'middle_name', 'birth_surname', 'married_names', 'nicknames', 'sex', 'living',
     'birth_date', 'birth_place', 'death_date', 'death_place', 'notes', 'is_placeholder', 'merged_into', 'merge_log',
-    'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at'],
+    'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at', 'adoption_shown'],
   Relationships: ['id', 'status', 'type', 'person_a', 'person_b', 'subtype', 'start_date', 'end_date',
     'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at'],
   Suggestions: ['id', 'status', 'target_id', 'field', 'proposed_value', 'previous_value',
     'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at'],
   Photos: ['id', 'status', 'drive_file_id', 'caption', 'date_taken', 'place',
-    'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at'],
+    'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at', 'kind', 'mime'],
   PhotoTags: ['id', 'status', 'photo_id', 'person_id', 'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at'],
   Contributors: ['id', 'status', 'token', 'person_id', 'display_name', 'first_seen', 'last_seen', 'reviewed_at']
 };
@@ -54,6 +57,11 @@ var PERSON_FIELDS = {
 };
 var RELATIONSHIP_FIELDS = { subtype: 'subtype', start_date: 'date', end_date: 'date' };
 var PHOTO_FIELDS = { caption: 'notes', date_taken: 'date', place: 'text' };
+// What can be uploaded (2026-11-22): photos and scans, and PDFs. The page shrinks images it can read before sending;
+// HEIC, TIFF and PDF arrive as they are.
+var FILE_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif',
+  'image/heic': '.heic', 'image/heif': '.heif', 'image/tiff': '.tif', 'application/pdf': '.pdf' };
+var BROWSER_IMAGES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 /* =========================================================================
  * Entry points
@@ -76,9 +84,10 @@ function doPost(e) {
     catch (err) { throw userError_('Could not read the request.'); }
     var action = body.action || '';
 
-    if (action === 'tree') return publicTree_(loadDb_(), body.token || '');
-
     var isAdmin = !!body.key && checkAdminKey_(body.key);
+    if (action === 'tree') return publicTree_(loadDb_(), body.token || '', isAdmin);
+    if (action === 'own_thumb') return ownThumb_(loadDb_(), body.token || '', body.id);
+
     if (action.indexOf('admin_') === 0 && !isAdmin) throw userError_('Admin key not accepted.');
 
     return withLock_(function () {
@@ -89,6 +98,7 @@ function doPost(e) {
         case 'upload_photo': result = uploadPhoto_(db, body, isAdmin); break;
         case 'withdraw': result = withdraw_(db, body); break;
         case 'own_edit': result = ownEdit_(db, body); break;
+        case 'set_adoption_shown': result = setAdoptionShown_(db, body, isAdmin); break;
         case 'admin_tree': result = adminTree_(db); break;
         case 'admin_queue': result = adminQueue_(db); break;
         case 'admin_approve': result = adminDecide_(db, body.items || [], 'approved'); break;
@@ -373,43 +383,59 @@ function contributorName_(db, contributorId) {
   return [p.first_name, currentSurname_(p)].filter(String).join(' ') || null;
 }
 
-function publicPerson_(db, p) {
+/** Which view a caller gets: owner (admin key), family (an approved "this is me"), or public. */
+function viewerTier_(db, token, isAdmin) {
+  if (isAdmin) return 'owner';
+  var me = findContributorByToken_(db, token);
+  if (!me || me.status !== 'approved' || !me.person_id) return 'public';
+  var p = resolvePerson_(db, me.person_id);
+  return p && p.status === 'approved' ? 'family' : 'public';
+}
+
+// "about:1983-05-11" -> "about:1983": the year without the day.
+function yearOnly_(d) { var m = /^(exact|about|before|after):(\d{1,4})/.exec(d || ''); return m ? m[1] + ':' + m[2] : ''; }
+
+function publicPerson_(db, p, tier) {
   var living = isLiving_(p);
   var base = {
     id: p.id,
     living: living,
     first_name: p.first_name,
     middle_name: p.middle_name,   // public for everyone (Jonny, 2026-11-20): tells apart relatives with the same name
-    nicknames: p.nicknames,       // "Goes by", same reason
+    nicknames: p.nicknames,
     last_name: currentSurname_(p),
+    birth_surname: p.birth_surname,         // maiden and earlier names public for everyone (Jonny, 2026-11-22)
+    married_names: marriedList_(p),
+    sex: p.sex,                             // gender public for everyone (2026-11-22)
+    source: p.source,
     is_placeholder: isTrue_(p.is_placeholder),
     added_by: contributorName_(db, p.submitted_by)
   };
-  if (living) return base;
-  base.birth_surname = p.birth_surname;
-  base.married_names = marriedList_(p);
-  base.sex = p.sex;
+  if (living && tier === 'public') {
+    base.birth_date = yearOnly_(p.birth_date);   // the year only; the full birthday is family's
+    return base;
+  }
   base.birth_date = p.birth_date;
   base.birth_place = p.birth_place;
   base.death_date = p.death_date;
   base.death_place = p.death_place;
   base.notes = p.notes;
-  base.source = p.source;
+  if (tier === 'owner') { base.living_raw = p.living; base.adoption_shown = isTrue_(p.adoption_shown); }
   return base;
 }
 
-function publicRelationship_(db, r, livingById) {
+/* Adoption and foster links (2026-11-22): the adopted person's own choice. Shown as plain "parent" while the child is
+   living, unless they chose to show it (or Jonny did for them). The owner always sees the real kind. Step links stay:
+   the layout needs them and they follow from a public partnership anyway. */
+function publicRelationship_(db, r, livingById, tier) {
   var anyLiving = livingById[r.person_a] || livingById[r.person_b];
-  var out = { id: r.id, type: r.type, a: r.person_a, b: r.person_b, subtype: r.subtype, added_by: contributorName_(db, r.submitted_by) };
-  if (anyLiving) {
-    // Adoption and foster status of a living person is theirs to share. Step links stay: the layout needs them
-    // and they follow from a public partnership anyway. Partnership dates are hidden.
-    if (r.type === 'parent_child' && r.subtype !== 'step') out.subtype = 'parent';
-    return out;
+  var out = { id: r.id, type: r.type, a: r.person_a, b: r.person_b, subtype: r.subtype, source: r.source,
+    added_by: contributorName_(db, r.submitted_by) };
+  if (r.type === 'parent_child' && (r.subtype === 'adopted' || r.subtype === 'foster') && tier !== 'owner' && livingById[r.person_b]) {
+    var child = db.People.get(r.person_b);
+    if (!(child && isTrue_(child.adoption_shown))) out.subtype = 'parent';
   }
-  out.start_date = r.start_date;
-  out.end_date = r.end_date;
-  out.source = r.source;
+  if (!anyLiving || tier !== 'public') { out.start_date = r.start_date; out.end_date = r.end_date; }
   return out;
 }
 
@@ -417,8 +443,9 @@ function publicRelationship_(db, r, livingById) {
  * Public tree
  * ========================================================================= */
 
-function publicTree_(db, token) {
+function publicTree_(db, token, isAdmin) {
   var props = PropertiesService.getScriptProperties();
+  var tier = viewerTier_(db, token, isAdmin);
   var people = [];
   var livingById = {};
   var visible = {};
@@ -426,23 +453,28 @@ function publicTree_(db, token) {
     if (p.status !== 'approved') return;
     visible[p.id] = true;
     livingById[p.id] = isLiving_(p);
-    people.push(publicPerson_(db, p));
+    people.push(publicPerson_(db, p, tier));
   });
 
   var relationships = db.Relationships.rows
     .filter(function (r) { return r.status === 'approved' && visible[r.person_a] && visible[r.person_b]; })
-    .map(function (r) { return publicRelationship_(db, r, livingById); });
+    .map(function (r) { return publicRelationship_(db, r, livingById, tier); });
 
   var tagsByPhoto = {};
   db.PhotoTags.rows.forEach(function (t) {
     if (t.status !== 'approved' || !visible[t.person_id]) return;
     (tagsByPhoto[t.photo_id] = tagsByPhoto[t.photo_id] || []).push(t.person_id);
   });
+  // A document (certificate, license) that tags a living person is family's only: it can show what the rules hide.
   var photos = db.Photos.rows
     .filter(function (f) { return f.status === 'approved' && f.drive_file_id; })
+    .filter(function (f) {
+      return tier !== 'public' || photoKind_(f) !== 'document' || !(tagsByPhoto[f.id] || []).some(function (id) { return livingById[id]; });
+    })
     .map(function (f) {
-      return { id: f.id, file_id: f.drive_file_id, caption: f.caption, date_taken: f.date_taken, place: f.place,
-        source: f.source, added_by: contributorName_(db, f.submitted_by), tags: tagsByPhoto[f.id] || [] };
+      return { id: f.id, file_id: f.drive_file_id, kind: photoKind_(f), mime: f.mime || 'image/jpeg', caption: f.caption,
+        date_taken: f.date_taken, place: f.place, source: f.source, added_by: contributorName_(db, f.submitted_by),
+        submitted_at: f.submitted_at, tags: tagsByPhoto[f.id] || [] };
     });
 
   // Accepted corrections, shown only on deceased people. Both values and who said each stay on record.
@@ -450,7 +482,7 @@ function publicTree_(db, token) {
   db.Suggestions.rows.forEach(function (s) {
     if (s.status !== 'approved') return;
     var p = db.People.get(s.target_id);
-    if (!p || !visible[p.id] || livingById[p.id]) return;
+    if (!p || !visible[p.id] || (livingById[p.id] && tier === 'public')) return;
     history.push({ id: s.id, target_id: s.target_id, field: s.field, value: parseJsonValue_(s.proposed_value),
       previous_value: parseJsonValue_(s.previous_value), source: s.source, added_by: contributorName_(db, s.submitted_by),
       date: s.reviewed_at });
@@ -464,7 +496,8 @@ function publicTree_(db, token) {
     meta: {
       generated_at: nowIso_(),
       owner_person_id: props.getProperty('OWNER_PERSON_ID') || '',
-      paused: props.getProperty('PAUSED') === '1'
+      paused: props.getProperty('PAUSED') === '1',
+      view: tier
     }
   };
   var me = findContributorByToken_(db, token);
@@ -502,13 +535,59 @@ function ownView_(db, me) {
     suggestions: db.Suggestions.rows.filter(pending).map(function (s) {
       return { id: s.id, target_id: s.target_id, field: s.field, value: parseJsonValue_(s.proposed_value), source: s.source };
     }),
+    // No thumbnails here: a Drive call per photo would slow every tree load. The page asks with own_thumb when needed.
     photos: db.Photos.rows.filter(pending).map(function (f) {
-      return { id: f.id, caption: f.caption, date_taken: f.date_taken, place: f.place, thumbnail: thumbnailDataUrl_(f.drive_file_id) };
+      return { id: f.id, kind: photoKind_(f), mime: f.mime || 'image/jpeg', caption: f.caption, date_taken: f.date_taken,
+        place: f.place, source: f.source, submitted_at: f.submitted_at };
     }),
     tags: db.PhotoTags.rows.filter(pending).map(function (t) { return { id: t.id, photo_id: t.photo_id, person_id: t.person_id }; }),
+    adoption: ownAdoption_(db, me),
     rejected: rejected
   };
 }
+
+/** For a relative confirmed as someone adopted or fostered: their links' real kind and whether they chose to show it. */
+function ownAdoption_(db, me) {
+  if (me.status !== 'approved' || !me.person_id) return null;
+  var p = resolvePerson_(db, me.person_id);
+  if (!p || p.status !== 'approved') return null;
+  var links = db.Relationships.rows.filter(function (r) {
+    return r.status === 'approved' && r.type === 'parent_child' && r.person_b === p.id && (r.subtype === 'adopted' || r.subtype === 'foster');
+  });
+  if (!links.length) return null;
+  return { person_id: p.id, shown: isTrue_(p.adoption_shown), links: links.map(function (r) { return { a: r.person_a, b: r.person_b, subtype: r.subtype }; }) };
+}
+
+/**
+ * The adopted person decides whether the tree shows it (Jonny, 2026-11-22). Takes effect at once, without the queue:
+ * the adoption itself was already approved, and only the person it's about (or Jonny) can change who sees it.
+ */
+function setAdoptionShown_(db, body, isAdmin) {
+  var p = resolvePerson_(db, body.person_id);
+  if (!p || p.status !== 'approved') throw userError_('Person not found.');
+  if (!isAdmin) {
+    var me = findContributorByToken_(db, body.token);
+    if (!me || me.status !== 'approved' || !me.person_id || (resolvePerson_(db, me.person_id) || {}).id !== p.id) {
+      throw userError_('Only the person themself can change this.');
+    }
+  }
+  var has = db.Relationships.rows.some(function (r) {
+    return r.status === 'approved' && r.type === 'parent_child' && r.person_b === p.id && (r.subtype === 'adopted' || r.subtype === 'foster');
+  });
+  if (!has) throw userError_('There is no adoption on the tree to show or hide.');
+  db.People.set(p, 'adoption_shown', body.shown ? 'true' : '');
+  return { person_id: p.id, shown: !!body.shown };
+}
+
+/** A relative's own pending photo, as a small preview, fetched only when their device has none. */
+function ownThumb_(db, token, id) {
+  var me = findContributorByToken_(db, token);
+  var f = db.Photos.get(id);
+  if (!me || !f || f.submitted_by !== me.id || f.status !== 'pending') throw userError_('Photo not found.');
+  return { id: id, thumbnail: thumbnailDataUrl_(f.drive_file_id) };
+}
+
+function photoKind_(f) { return f.kind === 'document' || (!f.kind && f.mime === 'application/pdf') ? 'document' : 'photo'; }
 
 function thumbnailDataUrl_(fileId) {
   if (!fileId) return '';
@@ -955,28 +1034,29 @@ function parseJsonValue_(s) {
  * Photos
  * ========================================================================= */
 
-/** body: { token, image (base64, no data: prefix), mime, caption, date_taken, place, source, tags:[person ids] } */
+/** body: { token, image (base64, no data: prefix), mime, kind ('photo' | 'document'), caption, date_taken, place, source,
+ *  tags:[person ids] } */
 function uploadPhoto_(db, body, isAdmin) {
   var props = PropertiesService.getScriptProperties();
   if (!isAdmin && props.getProperty('PAUSED') === '1') throw userError_('Adding is paused for the moment. Try again later.');
   var me = getOrCreateContributor_(db, body.token, body.display_name);
   if (!isAdmin && itemsInLastDay_(db, me.id) >= CONFIG.MAX_ITEMS_PER_DAY) throw userError_('That is a lot for one day. Try again tomorrow.');
 
-  var mime = String(body.mime || '');
-  if (['image/jpeg', 'image/png', 'image/webp'].indexOf(mime) < 0) throw userError_('Photos need to be JPEG, PNG or WebP.');
-  if (typeof body.image !== 'string' || !body.image) throw userError_('No photo received.');
+  var mime = String(body.mime || '').toLowerCase();
+  if (!FILE_TYPES[mime]) throw userError_('That kind of file can\'t be added. Photos (JPEG, PNG, HEIC and the like) and PDFs work.');
+  if (typeof body.image !== 'string' || !body.image) throw userError_('No file received.');
   var bytes;
-  try { bytes = Utilities.base64Decode(body.image); } catch (e) { throw userError_('The photo did not arrive intact. Try again.'); }
-  if (bytes.length > CONFIG.MAX_PHOTO_BYTES) throw userError_('That photo is too large.');
+  try { bytes = Utilities.base64Decode(body.image); } catch (e) { throw userError_('The file did not arrive intact. Try again.'); }
+  if (bytes.length > CONFIG.MAX_PHOTO_BYTES) throw userError_('That file is too large. Files up to 10 MB work.');
+  var kind = body.kind === 'document' || (body.kind !== 'photo' && mime === 'application/pdf') ? 'document' : 'photo';
 
   var ctx = { db: db, me: me, isAdmin: isAdmin, now: nowIso_(), batch: 'B-' + randomToken_(8).toLowerCase(), refs: {} };
   var fields = cleanFields_({ caption: body.caption, date_taken: body.date_taken, place: body.place }, PHOTO_FIELDS, '');
   var tagIds = (Array.isArray(body.tags) ? body.tags : []).slice(0, 50).map(function (t) { return checkPersonRef_(ctx, t, 'Tag: '); });
   var status = isAdmin ? 'approved' : 'pending';
 
-  var row = db.Photos.insert(stamp_(ctx, Object.assign({ status: status, source: cleanText_(body.source, CONFIG.MAX_TEXT) }, fields)));
-  var ext = mime === 'image/png' ? '.png' : mime === 'image/webp' ? '.webp' : '.jpg';
-  var file = DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID).createFile(Utilities.newBlob(bytes, mime, row.id + ext));
+  var row = db.Photos.insert(stamp_(ctx, Object.assign({ status: status, kind: kind, mime: mime, source: cleanText_(body.source, CONFIG.MAX_TEXT) }, fields)));
+  var file = DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID).createFile(Utilities.newBlob(bytes, mime, row.id + FILE_TYPES[mime]));
   db.Photos.set(row, 'drive_file_id', file.getId());
   if (isAdmin) publishPhotoFile_(file.getId());
 
@@ -1079,14 +1159,15 @@ function adminQueue_(db) {
       .filter(function (p) { return p && isLiving_(p); })
       .map(function (p) { return { id: p.id, name: personLabel_(db, p.id) }; });
     add('photo', f, { tagged: tags.map(function (t) { return { tag_id: t.id, person_id: t.person_id, name: personLabel_(db, t.person_id) }; }),
-      living_tagged: living, thumbnail: thumbnailDataUrl_(f.drive_file_id) });
+      living_tagged: living, thumbnail: thumbnailDataUrl_(f.drive_file_id), photo_kind: photoKind_(f) });
   });
   db.PhotoTags.rows.forEach(function (t) {
     if (t.status !== 'pending') return;
     var photo = db.Photos.get(t.photo_id);
     if (photo && photo.status === 'pending') return; // shown with its photo
     var p = db.People.get(t.person_id);
-    add('tag', t, { person_label: personLabel_(db, t.person_id), living: !!(p && isLiving_(p)) });
+    add('tag', t, { person_label: personLabel_(db, t.person_id), living: !!(p && isLiving_(p)),
+      photo_kind: photo ? photoKind_(photo) : 'photo', photo_caption: photo ? photo.caption : '', drive_file_id: photo ? photo.drive_file_id : '' });
   });
 
   var list = Object.keys(batches).map(function (k) { return batches[k]; });
@@ -1317,6 +1398,8 @@ function adminUnmerge_(db, dropId) {
 function adminPhoto_(db, id) {
   var f = db.Photos.get(id);
   if (!f || !f.drive_file_id) throw userError_('Photo not found.');
+  // A browser can't draw a PDF, HEIC or TIFF in an <img>: send Drive's picture of it instead.
+  if (BROWSER_IMAGES.indexOf(f.mime || 'image/jpeg') < 0) return { id: id, data_url: thumbnailDataUrl_(f.drive_file_id), preview: true };
   var blob = DriveApp.getFileById(f.drive_file_id).getBlob();
   return { id: id, data_url: 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes()) };
 }

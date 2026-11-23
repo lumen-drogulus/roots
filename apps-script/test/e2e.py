@@ -153,7 +153,7 @@ async def main():
         snames = await sp.eval_on_selector_all('.card .nm', 'e => e.map(x => x.textContent)')
         check('pending entries are invisible to others', not any(n.startswith(('Kate', 'Walter')) for n in snames), snames)
         await sp.locator('.card', has_text='Dana').first.click(); await sp.wait_for_timeout(300)
-        check('living person shows the privacy note', 'only their names show' in await sp.inner_text('#panel'))
+        check('living person shows the privacy note', 'show to family once' in await sp.inner_text('#panel'))
         raw = urllib.request.urlopen(urllib.request.Request(API, data=json.dumps({'action': 'tree'}).encode(), headers={'Content-Type': 'text/plain'})).read().decode()
         check('public API has no tokens or living details', 'token' not in raw and 'Kate' not in raw)
 

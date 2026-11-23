@@ -87,7 +87,8 @@ function fromPublic(p) {
     birthSurname: p.birth_surname || '', married,
     born: fuzzyShort(p.birth_date), died: fuzzyShort(p.death_date), bornRaw: p.birth_date || '', diedRaw: p.death_date || '',
     bornPlace: p.birth_place || '', diedPlace: p.death_place || '', notes: p.notes || '', source: p.source || '', nicknames: p.nicknames || '',
-    living: !!p.living, sex: p.sex || '', placeholder: !!p.is_placeholder, addedBy: p.added_by || ''
+    living: !!p.living, sex: p.sex || '', placeholder: !!p.is_placeholder, addedBy: p.added_by || '',
+    ...(p.living_raw ? { livingRaw: p.living_raw } : {}), adoptionShown: !!p.adoption_shown
   };
 }
 function fromOwn(p) {
@@ -166,8 +167,7 @@ function treeToGraphData(tree) {
     const raw = p.livingRaw || (p.base.placeholder ? 'unknown' : p.base.living ? 'living' : 'deceased'), born = parseFuzzy(p.bornRaw);
     p.living = !p.placeholder && (raw === 'living' || (raw !== 'deceased' && !p.diedRaw && !(born && born.q !== 'after' && born.y <= new Date().getFullYear() - 110)));
   });
-  PHOTOS.clear();
-  (tree.photos || []).forEach(f => (f.tags || []).forEach(pid => { if (!PHOTOS.has(pid)) PHOTOS.set(pid, []); PHOTOS.get(pid).push(f); }));
+  indexPhotos(tree);
   people.forEach(p => { p.photos = (PHOTOS.get(p.id) || []).length; });
   return { people, rels };
 }
@@ -290,7 +290,7 @@ function relation(id) {
   if (!prev.has(id)) return '';
   let path = '', chain = [], cur = id;
   while (prev.get(cur)) { const [from, s] = prev.get(cur); path = s + path; chain.unshift(cur); cur = from; }
-  const p = P(id), w = (m, f, n) => (!isLiving(p) && p.sex === 'male') ? m : (!isLiving(p) && p.sex === 'female') ? f : n;
+  const p = P(id), w = (m, f, n) => p.sex === 'male' ? m : p.sex === 'female' ? f : n;
   const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
   const greatX = (n, word) => cap('great-'.repeat(n) + word);
   if (path === 'U' || path === 'D') {
@@ -304,7 +304,7 @@ function relation(id) {
   if (path === 'P') { const sub = (partnersOf(v).find(x => x.id === id) || {}).sub; return isFormer(sub) ? 'Former partner' : w('Husband', 'Wife', 'Partner'); }
   if (path === 'UD') { const s = siblingsOf(v).find(x => x.id === id); return (s && s.half ? 'Half-' : '') + (s && s.half ? w('brother', 'sister', 'sibling') : w('Brother', 'Sister', 'Sibling')); }
   if (path === 'UUD') return w('Uncle', 'Aunt', "Parent's sibling");
-  if (/^UUU+D$/.test(path)) { const n = path.length - 3; return isLiving(p) || !p.sex ? greatX(n - 1, "grandparent's sibling") : greatX(n, w('uncle', 'aunt', '')); }
+  if (/^UUU+D$/.test(path)) { const n = path.length - 3; return !p.sex || p.sex === 'other' ? greatX(n - 1, "grandparent's sibling") : greatX(n, w('uncle', 'aunt', '')); }
   if (path === 'UDD') return w('Nephew', 'Niece', "Sibling's child");
   if (path === 'UUDD') return 'Cousin';
   if (path === 'UUUDDD') return 'Second cousin';
@@ -1134,10 +1134,6 @@ function openPerson(id) {
   let body = '';
   if (p.placeholder) {
     body += `<p class="story">Nobody has named this person yet. If you know who ${rel ? 'this ' + rel.toLowerCase() : 'they'} ${living ? 'is' : 'was'}, fill in what you know. Even a first name helps.</p>`;
-  } else if (living && !p.pending) {
-    body += id === STATE.viewer
-      ? `<div class="private">${ICON.lock}<span>Relatives see only your names. Your dates, places and stories stay private. ${OWNER_NAME} can see everything.</span></div>`
-      : `<div class="private">${ICON.lock}<span>${esc(p.first)} is living, so only their names show here. Dates, places, maiden name and stories stay private while they're alive.</span></div>`;
   } else {
     const facts = [];
     if (p.bornRaw || p.bornPlace) facts.push(`<dt>Born</dt><dd>${esc([fuzzyLong(p.bornRaw), p.bornPlace].filter(Boolean).join(', '))}</dd>`);
@@ -1146,8 +1142,10 @@ function openPerson(id) {
     if (hist) facts.push(`<dt>Last names</dt><dd>${hist}</dd>`);
     if (facts.length) body += `<dl class="facts">${facts.join('')}</dl>`;
     if (p.notes) body += `<p class="story">${esc(p.notes)}</p>`;
-    if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
+    if (living && !p.pending) body += privacyNote(p);
+    else if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
   }
+  body += adoptionBox(id);
   const kindWords = { step: 'step-parent', adopted: 'adoptive parent', foster: 'foster parent' };
   const kinLines = [
     ...parentsOf(id).filter(q => kindWords[G.pcSub.get(q + '>' + id)]).map(q => `${esc(displayName(P(q)))} is ${esc(p.first || 'their')}'s ${kindWords[G.pcSub.get(q + '>' + id)]}.`),
@@ -1164,12 +1162,8 @@ function openPerson(id) {
   const work = ownWork(id);
   if (work.length) body += `<div class="ownwork"><span class="owhead">Waiting for ${OWNER_NAME}. Only you see ${work.length > 1 ? 'these' : 'this'} until he confirms.</span>${work.map((w, i) =>
     `<div class="owrow" data-tbrow><span>${w.text}</span><button class="nbtn" data-tb="${i}">Take back</button></div>`).join('')}</div>`;
-  if (!p.placeholder && !p.pending) {
-    const ph = PHOTOS.get(id) || [];
-    const tiles = ph.slice(0, 6).map(f => `<a class="photo real" href="${photoURL(f.file_id, 1600)}" target="_blank" rel="noopener" title="${esc(f.caption || 'Photo')}"><img src="${photoURL(f.file_id, 400)}" alt="${esc(f.caption || 'Photo of ' + p.first)}" loading="lazy"></a>`).join('');
-    body += `<div><div class="label">Photos &amp; documents</div><div class="photos">${tiles}<button class="photo add" id="pAddPhoto">Add photos or documents</button></div></div>`;
-  }
-  if (!p.placeholder && !living && p.addedBy) body += `<p class="prov">Added by ${esc(p.addedBy)}${p.source ? ' · Source: ' + esc(p.source) : ''}</p>`;
+  if (!p.placeholder) body += photoSectionHTML(id);
+  if (!p.placeholder && (p.addedBy || p.source) && !p.pending) body += `<p class="prov">${[p.addedBy ? 'Added by ' + esc(p.addedBy) : '', p.source ? 'Source: ' + esc(p.source) : ''].filter(Boolean).join(' · ')}</p>`;
   const isFocus = id === STATE.focus;
   const canClaim = !STATE.viewer && !p.placeholder && living;
   openPanel(`
@@ -1198,7 +1192,9 @@ function openPerson(id) {
   $('#pAdd').onclick = () => openAdd(id);
   if ($('#pEdit')) $('#pEdit').onclick = () => openEdit(id);
   if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);
-  const ap = $('#pAddPhoto'); if (ap) ap.onclick = () => toast('Adding photos and documents is coming soon.');
+  wirePhotoSection(id);
+  wireAdoptionBox(id);
+  const pf = $('#pFindMe'); if (pf) pf.onclick = () => { closePanel(); openIntro(2); };
   document.querySelectorAll('.nudge').forEach(n => {
     const [a, b] = n.dataset.pair.split('>');
     n.querySelector('[data-no]').onclick = () => {
@@ -1245,10 +1241,10 @@ function namesFromPerson(p) {
 const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
 /* Info buttons on the choices where a wrong guess writes something Jonny then has to untangle (2026-11-22). */
 const INFO = {
-  parent: `**Birth:** the parent they were born to.\n**Step:** married to or partnered with one of their parents, but not their parent by birth or adoption.\n**Adoptive:** legally adopted them.\n**Foster:** raised them in foster care without adopting.\nWhile either of them is living, adoptive and foster show to everyone as plain "parent".`,
+  parent: `**Birth:** the parent they were born to.\n**Step:** married to or partnered with one of their parents, but not their parent by birth or adoption.\n**Adoptive:** legally adopted them.\n**Foster:** raised them in foster care without adopting.\nWhile the child is living, adoptive and foster show as plain "parent" unless the child chooses to show it.`,
   sibling: `**Full:** the same two parents.\n**Half:** one parent in common. You'll pick which one, so their line comes from the right parent.\n**Step:** no parent in common. One of their parents is with one of the other's parents.`,
   couple: `**Married:** married now.\n**Partners:** together now, not married.\n**Divorced:** were married, aren't now.\n**Former partners:** were together, never married, and aren't together now.\n**Widowed:** married until one of them died.`,
-  living: `**Living:** only their names show. Dates, places, maiden name and stories stay private while they're alive.\n**Passed away:** everything you add shows once ${OWNER_NAME} confirms it.\n**Not sure:** treated like Living, so their details stay hidden from everyone, including you, until someone marks them Passed away.`,
+  living: `**Living:** everyone sees their names, gender and birth year. Their birthday, birthplace and story show only to family ${OWNER_NAME} has confirmed.\n**Passed away:** everything you add shows once ${OWNER_NAME} confirms it.\n**Not sure:** treated like Living until someone marks them Passed away.`,
   which: `**Someone new:** they aren't on the tree yet.\n**Already in the tree:** they're on it somewhere, maybe as Unknown. Pick them from the list so they get linked, not added a second time.\nAdding someone who's already there makes a duplicate that ${OWNER_NAME} has to merge by hand.`
 };
 /* A link that shouldn't exist (a mis-tapped "Yes, link them", the wrong parent picked): chosen in Edit, sent as a
@@ -1282,7 +1278,7 @@ function parentKindsHTML(id) {
   });
   const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
   return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents ${infoBtn(INFO.parent)}</div><div class="row2">${rows.join('')}</div>` +
-    (masked ? '<p class="hint">"Keep as is": while someone is living, whether a parent is by birth, adoption or fostering stays private, so it isn\'t shown here.</p>' : '') : '';
+    (masked ? '<p class="hint">"Keep as is": while someone is living, whether a parent is by birth, adoption or fostering is theirs to share, so it isn\'t shown here.</p>' : '') : '';
 }
 const nameRowHTML = (v = '') => `<div class="namerow"><input class="fOtherName" value="${esc(v)}" autocomplete="off" aria-label="Earlier last name"><button type="button" class="rm" aria-label="Remove this last name">×</button></div>`;
 function addNameRow(v = '', focus = true) {
@@ -1318,7 +1314,7 @@ function fieldsHTML(p, livingV, opts = {}) {
     ${noName ? `<label class="kid noname"><input type="checkbox" id="fNoName"${unk ? ' checked' : ''}><span>I don't know their name</span></label>
     <p class="hint" id="fNoNameHint"${unk ? '' : ' hidden'}>They'll show as Unknown. Add what you do know below, and anyone who knows the name can fill it in later.</p>` : ''}
     <div class="field"><label for="fSex">Gender</label><select id="fSex">${[['', 'Not sure, or rather not say'], ['female', 'Female'], ['male', 'Male'], ['other', 'Other']].map(([v, t]) => `<option value="${v}"${(p.sex || '') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
-      <p class="hint">Lets the tree say mother or grandson instead of parent or grandchild. Private while they're living${opts.edit && isLiving(p) && !p.pending ? ', so it shows blank here even if someone already chose one' : ''}.</p></div>
+      <p class="hint">Lets the tree say mother or grandson instead of parent or grandchild.</p></div>
     ${livingSeg(self ? 'living' : livingV, self)}
     ${self ? `<div class="field"><label for="fBorn">When were you born?</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1952, or May 14, 1952"></div>
     <div class="field"><label for="fPlace">Where were you born?</label><input id="fPlace" value="${esc(p.bornPlace || '')}" placeholder="&quot;Cleveland&quot; or &quot;somewhere in Ohio&quot; is fine"></div>
@@ -1331,8 +1327,8 @@ function fieldsHTML(p, livingV, opts = {}) {
     ${self ? '' : `<div class="field"><label for="fSource">Information source</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(opts.edit ? '' : (p.source || ''))}"></div>
     ${whoField()}`}
     <p class="formerr" id="formErr" role="alert" hidden></p>
-    <p class="hint" id="fNameHint">${self ? 'Only your first name is needed. While you\'re living, only your names show on the tree; your birthday, birthplace and notes stay private.'
-      : 'Only a name is needed, and "I don\'t know their name" works too. For living people, only names show (first, middle, nickname, last now); everything else stays private.'}</p>`;
+    <p class="hint" id="fNameHint">${self ? `Only your first name is needed. Everyone sees your names, gender and birth year; your birthday, birthplace and notes show only to family ${OWNER_NAME} has confirmed.`
+      : `Only a name is needed, and "I don't know their name" works too. For living people, everyone sees names, gender and birth year; birthdays, birthplaces and stories show only to family ${OWNER_NAME} has confirmed.`}</p>`;
 }
 const isNoName = q => !q.placeholder && sameName(q.first, 'Unknown') && !q.middle && !q.last && !q.nicknames;
 // "Mom", "great Grandma", "Uncle Rob": what the person typing calls them, not a nickname. A gentle note, never a block.
@@ -1888,6 +1884,53 @@ async function claimMe(id) {
 }
 
 /* =====================================================================
+ * Who sees what (2026-11-22): three views, chosen by the server. The note on a living person's card says which
+ * one this device has, and how to get the fuller one.
+ * ===================================================================== */
+const VIEW = () => (TREE && TREE.meta && TREE.meta.view) || 'public';
+function privacyNote(p) {
+  const v = VIEW(), mine = p.id === STATE.viewer;
+  const box = (t, extra = '') => `<div class="private">${ICON.lock}<span>${t}</span>${extra}</div>`;
+  if (v === 'owner') return box(`Everyone with the link sees ${esc(p.first || 'their')}'s names, gender and birth year. The birthday, birthplace and story show only to family you've confirmed.`);
+  if (v === 'family') return box(mine
+    ? `Everyone with the link sees your names, gender and birth year. Your birthday, birthplace and notes show only to family ${OWNER_NAME} has confirmed.`
+    : `You see ${esc(p.first || 'their')}'s birthday, birthplace and story because ${OWNER_NAME} has confirmed you. Others with the link see names, gender and birth year.`);
+  if (mine) return box(`${OWNER_NAME} hasn't confirmed it's you yet. Once he does, you'll see living relatives' birthdays, birthplaces and stories too.`);
+  return box(`${esc(p.first || 'They')} is living. Their birthday, birthplace and story show to family once ${OWNER_NAME} confirms who you are.`,
+    STATE.viewer ? '' : '<button class="nbtn" id="pFindMe">Find me or add me</button>');
+}
+/* Adoption is the adopted person's choice (Jonny, 2026-11-22). Their own card asks; the owner sees it on anyone's. */
+function adoptionBox(id) {
+  const own = (TREE && TREE.own && TREE.own.adoption) || null;
+  const p = P(id);
+  let links, shown, mine = false;
+  if (own && own.person_id === id) { links = own.links; shown = own.shown; mine = true; }
+  else if (VIEW() === 'owner' && isLiving(p)) {
+    links = parentsOf(id).map(q => ({ a: q, subtype: G.pcSub.get(q + '>' + id) })).filter(l => l.subtype === 'adopted' || l.subtype === 'foster');
+    shown = !!p.adoptionShown;
+  }
+  if (!links || !links.length) return '';
+  const names = andList(links.map(l => displayName(P(l.a)) || 'a parent'));
+  const word = links.every(l => l.subtype === 'foster') ? 'fostered' : 'adopted';
+  const who = mine ? 'you' : esc(p.first || 'them');
+  const text = shown
+    ? `The tree shows that ${esc(names)} ${word} ${who}.`
+    : `The tree shows ${esc(names)} as ${mine ? 'your' : esc(p.first || 'their') + "'s"} ${links.length > 1 ? 'parents' : 'parent'}, without saying ${who} ${mine ? 'were' : 'was'} ${word}.`;
+  const whose = mine ? 'This is your choice.' : `${esc(p.first || 'They')} can choose this on their own card once they've said who they are. You can too.`;
+  return `<div class="adoptbox"><span>${text} ${whose}</span><button class="nbtn" id="pAdopt" data-show="${shown ? '' : '1'}">${shown ? 'Keep it private' : 'Show it on the tree'}</button></div>`;
+}
+function wireAdoptionBox(id) {
+  const b = $('#pAdopt'); if (!b) return;
+  b.onclick = async () => {
+    b.disabled = true;
+    try { await api({ action: 'set_adoption_shown', person_id: id, shown: !!b.dataset.show }); }
+    catch (err) { b.disabled = false; toast(err.message); return; }
+    toast(b.dataset.show ? 'Done. The tree shows it now.' : 'Done. It stays private.');
+    await reload(); openPerson(id);
+  };
+}
+
+/* =====================================================================
  * Pages: thank you, send to family, search
  * ===================================================================== */
 let pendingReload = false;
@@ -1910,9 +1953,12 @@ function openSend() {
     <div class="head"><div><h2>Send Roots to a family member</h2><div class="sub">${v ? `The link opens the tree on you, ${esc(v.first)}, so they start somewhere familiar.` : 'Tip: tap your own card and choose "This is me" first, so the link opens the tree on you.'}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <div class="body sendbox">
+      <div class="sendwarn"><b>Think about who you send this to.</b>
+        <span>Roots has no passwords or sign-up, on purpose: anyone in the family can open it with one tap, no account, nothing to forget. That also means anyone you send the link to can look around the tree, and so can anyone they send it on to.</span>
+        <span>Send it to relatives, one at a time. Not to a public post or a big group chat.</span></div>
       <div class="field"><label for="sMsg">Message</label><textarea id="sMsg" style="min-height:140px">${esc(msg)}</textarea></div>
       <div class="field"><label for="sLink">Link</label><div class="linkrow"><input id="sLink" readonly value="${esc(shareLink())}"><button class="iconbtn" id="sCopyLink">Copy link</button></div></div>
-      <p class="hint">Anyone with the link sees the tree as it stands. Living people show by first and last name only.</p>
+      <p class="hint">Anyone with the link sees the tree as it stands. For living people that's names, gender and birth year. Birthdays, birthplaces and stories show only to family ${OWNER_NAME} has confirmed.</p>
     </div>
     <div class="foot">${navigator.share ? '<button class="iconbtn" id="sShare">Share…</button>' : ''}<button class="primary" id="sCopy">Copy message</button></div>`);
   $('#pClose').onclick = closePanel;
@@ -1947,6 +1993,341 @@ $('#btnSearch').onclick = () => pickPerson('Find a person', 'Everyone in the tre
 
 /* Names in the details card that point at another person (a spouse in the last-name history) open that person. */
 panel.addEventListener('click', e => { const a = e.target.closest('[data-goto]'); if (!a) return; e.preventDefault(); openPerson(a.dataset.goto); });
+
+/* =====================================================================
+ * Photos and documents (2026-11-22)
+ * Adding: phone camera, photo library or files; on a computer, files or drag and drop. Photos and scans are shrunk
+ * on the device before sending (1600 px photos, 2400 px documents, so a census page stays readable); re-saving also
+ * drops the GPS location phone photos carry. PDFs, and HEIC or TIFF a browser can't read, go up as they are (10 MB).
+ * Every photo shows on the card of everyone tagged in it. Nothing a relative adds shows to anyone else until Jonny
+ * confirms it; their own unconfirmed uploads and tags show on their screen right away, marked Unconfirmed.
+ * Files live in the "Roots photos" folder in Jonny's Google Drive, private until he approves them.
+ * ===================================================================== */
+const PHOTO_BY_ID = new Map();
+const FILE_MAX = 10 * 1024 * 1024;
+const UP_TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic',
+  heif: 'image/heif', tif: 'image/tiff', tiff: 'image/tiff', pdf: 'application/pdf' };
+const ICON_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>';
+const ICON_PIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>';
+
+/* Approved photos, plus this device's own unconfirmed uploads and tags, by person. */
+function indexPhotos(tree) {
+  PHOTOS.clear(); PHOTO_BY_ID.clear();
+  const add = (pid, f) => { if (!PHOTOS.has(pid)) PHOTOS.set(pid, []); if (!PHOTOS.get(pid).includes(f)) PHOTOS.get(pid).push(f); };
+  const own = tree.own || {}, ownTags = own.tags || [];
+  (own.photos || []).forEach(f => {
+    const x = { ...f, pending: true, tags: ownTags.filter(t => t.photo_id === f.id).map(t => t.person_id) };
+    PHOTO_BY_ID.set(x.id, x); x.tags.forEach(pid => add(pid, x));
+  });
+  (tree.photos || []).forEach(f => { const x = { ...f, tags: [...(f.tags || [])] }; PHOTO_BY_ID.set(x.id, x); x.tags.forEach(pid => add(pid, x)); });
+  ownTags.forEach(t => {
+    const x = PHOTO_BY_ID.get(t.photo_id);
+    if (!x || x.pending) return;
+    (x.myTags = x.myTags || []).push(t); add(t.person_id, x);
+  });
+}
+const isPdf = f => f.mime === 'application/pdf';
+/* A preview that won't load (Drive still making it, or offline) becomes the plain icon. */
+function phFail(img, doc, big) { const s = document.createElement('span'); s.className = 'phicon' + (big ? ' big' : ''); s.innerHTML = doc ? ICON_DOC : ICON_PIC; img.replaceWith(s); }
+const kindWord = f => f.kind === 'document' ? 'document' : 'photo';
+
+/* Previews of this device's own unconfirmed uploads: kept from the upload, else asked for once (own_thumb). */
+function localThumbs() { try { return JSON.parse(store.get('roots_thumbs') || '{}'); } catch (e) { return {}; } }
+function saveThumb(id, url) {
+  if (!url) return;
+  const t = localThumbs(); t[id] = url;
+  const keys = Object.keys(t); keys.slice(0, Math.max(0, keys.length - 40)).forEach(k => delete t[k]);
+  store.set('roots_thumbs', JSON.stringify(t));
+}
+const thumbAsked = new Set();
+function thumbSrc(f, w) { return f.pending ? (localThumbs()[f.id] || '') : photoURL(f.file_id, w); }
+function fillPendingThumbs(root) {
+  root.querySelectorAll('[data-needthumb]').forEach(async el => {
+    const id = el.dataset.needthumb;
+    if (thumbAsked.has(id)) return;
+    thumbAsked.add(id);
+    let res; try { res = await api({ action: 'own_thumb', id }); } catch (e) { return; }
+    if (!res.thumbnail) return;
+    saveThumb(id, res.thumbnail);
+    document.querySelectorAll(`[data-needthumb="${id}"]`).forEach(x => { x.outerHTML = `<img src="${res.thumbnail}" alt="">`; });
+  });
+}
+function thumbHTML(f, w) {
+  const src = thumbSrc(f, w);
+  if (src) return `<img src="${esc(src)}" alt="${esc(f.caption || (f.kind === 'document' ? 'Document' : 'Photo'))}" loading="lazy" onerror="phFail(this, ${f.kind === 'document'})">`;
+  return `<span class="phicon" data-needthumb="${esc(f.id)}">${f.kind === 'document' ? ICON_DOC : ICON_PIC}</span>`;
+}
+
+/* ---- the card's section ---- */
+function photoSectionHTML(id) {
+  const list = PHOTOS.get(id) || [];
+  const tiles = list.slice(0, 6).map((f, i) => `<button class="photo real${f.pending ? ' pend' : ''}" data-ph="${i}" aria-label="${esc(f.caption || (f.kind === 'document' ? 'Document' : 'Photo'))}">${thumbHTML(f, 400)}${f.kind === 'document' ? '<span class="dbadge">Document</span>' : ''}${f.pending ? '<span class="ptag">Unconfirmed</span>' : ''}</button>`).join('');
+  const more = list.length > 6 ? `<button class="photo more" data-ph="0">See all ${list.length}</button>` : '';
+  return `<div><div class="label">Photos &amp; documents</div><div class="photos">${tiles}${more}<button class="photo add" id="pAddPhoto">Add photos or documents</button></div></div>`;
+}
+function wirePhotoSection(id) {
+  document.querySelectorAll('#panel [data-ph]').forEach(b => b.onclick = () => openViewer(id, +b.dataset.ph));
+  const ap = $('#pAddPhoto'); if (ap) ap.onclick = () => openUpload(id);
+  fillPendingThumbs(panel);
+}
+
+/* ---- viewer: full screen, swipe or arrows between a person's photos ---- */
+const viewer = document.createElement('div');
+viewer.className = 'viewer'; viewer.id = 'viewer'; viewer.hidden = true;
+viewer.setAttribute('role', 'dialog'); viewer.setAttribute('aria-modal', 'true'); viewer.setAttribute('aria-label', 'Photo');
+document.body.appendChild(viewer);
+let VW = null;
+function openViewer(personId, i) {
+  VW = { from: personId, list: PHOTOS.get(personId) || [], i };
+  if (!VW.list.length) return;
+  viewer.hidden = false; document.body.classList.add('viewing'); renderViewer();
+}
+function closeViewer() { viewer.hidden = true; document.body.classList.remove('viewing'); VW = null; }
+function viewerStep(d) { if (!VW || VW.list.length < 2) return; VW.i = (VW.i + d + VW.list.length) % VW.list.length; renderViewer(); }
+function renderViewer() {
+  const f = VW.list[VW.i], n = VW.list.length, doc = f.kind === 'document';
+  const big = f.pending ? thumbSrc(f) : photoURL(f.file_id, 2000);
+  const people = f.tags.filter(pid => G.people.has(pid)).map(pid => ({ pid, mine: f.pending }));
+  (f.myTags || []).forEach(t => { if (G.people.has(t.person_id) && !people.some(x => x.pid === t.person_id)) people.push({ pid: t.person_id, mine: true }); });
+  const meta = [f.date_taken ? fuzzyLong(f.date_taken) : '', f.place || ''].filter(Boolean).join(' · ');
+  const open = f.pending ? '' : isPdf(f)
+    ? `<a class="vlink" href="https://drive.google.com/file/d/${encodeURIComponent(f.file_id)}/view" target="_blank" rel="noopener">Open the full document</a>`
+    : `<a class="vlink" href="${photoURL(f.file_id, 4000)}" target="_blank" rel="noopener">Open full size</a>`;
+  viewer.innerHTML = `
+    <div class="vtop"><span class="vcount">${n > 1 ? `${VW.i + 1} of ${n}` : ''}</span><button class="vx" id="vClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="vstage" id="vStage">
+      ${n > 1 ? '<button class="varrow prev" id="vPrev" aria-label="Previous">‹</button>' : ''}
+      ${big ? `<img src="${esc(big)}" alt="${esc(f.caption || kindWord(f))}" onerror="phFail(this, ${doc}, true)">` : `<span class="phicon big" data-needthumb="${esc(f.id)}">${doc ? ICON_DOC : ICON_PIC}</span>`}
+      ${n > 1 ? '<button class="varrow next" id="vNext" aria-label="Next">›</button>' : ''}
+    </div>
+    <div class="vinfo">
+      ${f.pending ? `<p class="vpend"><span class="ptag">Unconfirmed</span> Only you see this until ${OWNER_NAME} confirms it.${big ? ' Full size shows then too.' : ''}</p>` : ''}
+      <h3>${esc(f.caption || (doc ? 'Document' : 'Photo'))}</h3>
+      ${meta ? `<p class="vmeta">${esc(meta)}</p>` : ''}
+      ${open}
+      <div class="vpeople"><span class="lab">${doc ? 'About' : 'In this photo'}</span>
+        ${people.map(x => `<button class="chip${x.mine && !f.pending ? ' pend' : ''}" data-goto-person="${esc(x.pid)}">${esc(cardName(P(x.pid)))}${x.mine && !f.pending ? ' <em>unconfirmed</em>' : ''}</button>`).join('') || '<span class="muted">Nobody tagged yet.</span>'}
+      </div>
+      <div class="vtag" id="vTagBox" hidden><input id="vTagQ" placeholder="Start typing a name" autocomplete="off" aria-label="Who to tag"><div class="pick" id="vTagList"></div></div>
+      ${f.source || f.added_by ? `<p class="prov">${[f.added_by ? 'Added by ' + esc(f.added_by) : '', f.source ? 'Source: ' + esc(f.source) : ''].filter(Boolean).join(' · ')}</p>` : ''}
+      <div class="vbtns"><button class="iconbtn" id="vTag">Tag someone</button>${f.pending ? '<button class="iconbtn" id="vTakeBack">Take back</button>' : ''}</div>
+    </div>`;
+  $('#vClose').onclick = closeViewer;
+  if ($('#vPrev')) { $('#vPrev').onclick = () => viewerStep(-1); $('#vNext').onclick = () => viewerStep(1); }
+  viewer.querySelectorAll('[data-goto-person]').forEach(b => b.onclick = () => { const pid = b.dataset.gotoPerson; closeViewer(); openPerson(pid); });
+  $('#vTag').onclick = () => openViewerTag(f);
+  if ($('#vTakeBack')) $('#vTakeBack').onclick = () => {
+    const box = $('#vTakeBack').parentElement;
+    box.innerHTML = `<span>Take back this ${kindWord(f)}? ${OWNER_NAME} won't see it.</span><button class="nbtn yes" id="vTbYes">Yes, take back</button><button class="nbtn" id="vTbNo">Keep</button>`;
+    $('#vTbNo').onclick = renderViewer;
+    $('#vTbYes').onclick = async () => {
+      $('#vTbYes').disabled = true;
+      try { await api({ action: 'withdraw', ids: [f.id] }); } catch (err) { toast(err.message); renderViewer(); return; }
+      const from = VW.from; closeViewer(); toast('Taken back.'); await reload(); openPerson(from);
+    };
+  };
+  fillPendingThumbs(viewer);
+}
+function openViewerTag(f) {
+  const box = $('#vTagBox'); box.hidden = false; $('#vTag').hidden = true;
+  const have = new Set([...f.tags, ...(f.myTags || []).map(t => t.person_id)]);
+  const list = () => {
+    const q = $('#vTagQ').value.toLowerCase().trim();
+    const hits = q ? [...G.people.values()].filter(p => !p.placeholder && !have.has(p.id) && nameMatches(p, q)).slice(0, 6) : [];
+    $('#vTagList').innerHTML = !q ? '<p class="hint">Names show up here as you type.</p>' : hits.map(p => `<button data-id="${p.id}">${listName(p)}</button>`).join('') || '<p class="hint">Nobody by that name yet.</p>';
+    $('#vTagList').querySelectorAll('button').forEach(b => b.onclick = () => sendTag(f, b.dataset.id));
+  };
+  $('#vTagQ').oninput = list; list(); $('#vTagQ').focus();
+}
+async function sendTag(f, pid) {
+  $('#vTagList').querySelectorAll('button').forEach(b => { b.disabled = true; });
+  try { await api({ action: 'submit', items: [{ kind: 'tag', photo_id: f.id, person_id: pid }] }); }
+  catch (err) { toast(err.message); openViewerTag(f); return; }
+  toast(ADMIN_KEY ? `Tagged ${refName(P(pid))}.` : `Tagged ${refName(P(pid))}. It shows on their card once ${OWNER_NAME} confirms it; you see it now.`);
+  const from = VW.from, id = f.id;
+  await reload();
+  const list = PHOTOS.get(from) || [];
+  const i = list.findIndex(x => x.id === id);
+  if (i >= 0 && !viewer.hidden) { VW = { from, list, i }; renderViewer(); }
+}
+document.addEventListener('keydown', e => {
+  if (viewer.hidden) return;
+  if (e.key === 'Escape') closeViewer();
+  else if (e.key === 'ArrowLeft' && e.target.tagName !== 'INPUT') viewerStep(-1);
+  else if (e.key === 'ArrowRight' && e.target.tagName !== 'INPUT') viewerStep(1);
+});
+{
+  let sx = null;
+  viewer.addEventListener('touchstart', e => { sx = e.target.closest('#vStage') ? e.touches[0].clientX : null; }, { passive: true });
+  viewer.addEventListener('touchend', e => { if (sx === null) return; const dx = e.changedTouches[0].clientX - sx; sx = null; if (Math.abs(dx) > 50) viewerStep(dx < 0 ? 1 : -1); });
+}
+
+/* ---- adding ---- */
+let UP = null;
+const coarse = () => matchMedia('(pointer: coarse)').matches;
+function fileType(file) {
+  const ext = (/\.([a-z0-9]+)$/i.exec(file.name || '') || [])[1];
+  const byExt = ext ? UP_TYPES[ext.toLowerCase()] : '';
+  const t = (file.type || '').toLowerCase();
+  return Object.values(UP_TYPES).includes(t) ? t : byExt || t;
+}
+function openUpload(personId) {
+  const p = P(personId);
+  UP = { anchor: personId, files: [], tags: [personId], seq: 0 };
+  const phone = coarse();
+  openPanel(`
+    <div class="head"><div><h2>Add photos or documents</h2><div class="sub">For ${esc(p.first || 'their')}'s card. Old photos, scans of certificates, letters and newspaper clippings all belong here.</div></div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body form">
+      <div class="upbtns">
+        ${phone ? `<button type="button" class="primary" data-pick="upLib">Choose from your photos</button>
+        <button type="button" class="iconbtn" data-pick="upCam">Take a photo</button>
+        <button type="button" class="iconbtn" data-pick="upFile">Choose a file</button>`
+        : `<button type="button" class="primary" data-pick="upFile">Choose files from your computer</button>`}
+      </div>
+      ${phone ? '' : '<div class="dropzone" id="upDrop">Or drag photos and PDFs here</div>'}
+      <p class="hint">Photos (JPEG, PNG, HEIC and the like) and PDFs, up to 10 MB each. You can pick several at once.</p>
+      <input type="file" id="upLib" accept="image/*" multiple hidden>
+      <input type="file" id="upCam" accept="image/*" capture="environment" hidden>
+      <input type="file" id="upFile" accept="image/*,application/pdf,.pdf,.heic,.heif,.tif,.tiff" multiple hidden>
+      <div id="upList"></div>
+      <div id="upShared" hidden>
+        <div class="field"><span class="lab">Who's in them, or who they're about</span>
+          <div class="chips" id="upTags"></div>
+          <input id="upTagQ" placeholder="Add someone: start typing a name" autocomplete="off" aria-label="Add someone">
+          <div class="pick" id="upTagList"></div></div>
+        <div class="field"><label for="upPlace">Where</label><input id="upPlace" placeholder="Grandma's house, Cleveland"></div>
+        <div class="field"><label for="upSource">Where it came from</label><input id="upSource" placeholder="Grandma's album, the Herald, 1962"></div>
+        <p class="hint">${ADMIN_KEY ? 'These go on the tree right away. Documents that show a living person go to confirmed family only.'
+          : `${OWNER_NAME} looks at each one before the family sees it. You'll see yours right away, marked Unconfirmed. A document that shows a living person goes to confirmed family only, never to everyone with the link.`}</p>
+      </div>
+      <p class="formerr" id="upErr" role="alert" hidden></p>
+    </div>
+    <div class="foot"><button class="iconbtn" id="upCancel">Cancel</button><button class="primary" id="upGo" disabled>Upload</button></div>`);
+  $('#pClose').onclick = () => guardClose(() => openPerson(personId));
+  $('#upCancel').onclick = () => guardClose(() => openPerson(personId));
+  document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => $('#' + b.dataset.pick).click());
+  ['upLib', 'upCam', 'upFile'].forEach(id => { $('#' + id).onchange = e => { addUpFiles([...e.target.files]); e.target.value = ''; }; });
+  const dz = $('#upDrop');
+  if (dz) {
+    dz.ondragover = e => { e.preventDefault(); dz.classList.add('over'); };
+    dz.ondragleave = () => dz.classList.remove('over');
+    dz.ondrop = e => { e.preventDefault(); dz.classList.remove('over'); addUpFiles([...e.dataTransfer.files]); };
+  }
+  $('#upGo').onclick = doUpload;
+  currentSave = doUpload;
+  renderUpTags();
+  $('#upTagQ').oninput = renderUpTagList;
+}
+function addUpFiles(files) {
+  const bad = [];
+  files.forEach(file => {
+    const type = fileType(file);
+    if (!Object.values(UP_TYPES).includes(type)) { bad.push(`${file.name}: that kind of file can't be added. Photos and PDFs work.`); return; }
+    if (type === 'application/pdf' && file.size > FILE_MAX) { bad.push(`${file.name} is over 10 MB. Try a smaller scan.`); return; }
+    UP.files.push({ key: 'f' + (++UP.seq), file, type, kind: type === 'application/pdf' ? 'document' : 'photo', url: URL.createObjectURL(file) });
+  });
+  showUpErr(bad.join(' '));
+  renderUpList();
+}
+function showUpErr(msg) { $('#upErr').textContent = msg; $('#upErr').hidden = !msg; }
+function renderUpList() {
+  const keep = {};
+  document.querySelectorAll('#upList .uprow').forEach(r => { keep[r.dataset.k] = { cap: r.querySelector('.upcap').value, when: r.querySelector('.upwhen').value }; });
+  $('#upList').innerHTML = UP.files.map(f => {
+    const k = keep[f.key] || {};
+    const prev = f.type === 'application/pdf' ? `<span class="phicon">${ICON_DOC}</span>`
+      : `<img src="${f.url}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'phicon small',textContent:'Preview after upload'}))">`;
+    return `<div class="uprow" data-k="${f.key}">
+      <div class="upthumb">${prev}</div>
+      <div class="upfields">
+        <div class="upname"><span>${esc(f.file.name || 'Photo')}</span><button type="button" class="rm" aria-label="Remove ${esc(f.file.name || 'this file')}">×</button></div>
+        <div class="seg small" role="group" aria-label="What is it?"><button type="button" data-v="photo" aria-pressed="${f.kind === 'photo'}">Photo</button><button type="button" data-v="document" aria-pressed="${f.kind === 'document'}">Document</button></div>
+        <input class="upcap" placeholder="${f.kind === 'document' ? 'What is it? Birth certificate, a letter from Grandpa' : "What's happening? Who's in it?"}" value="${esc(k.cap || '')}" aria-label="Caption">
+        <input class="upwhen" placeholder="When: 1965, about 1965" value="${esc(k.when || '')}" aria-label="When">
+      </div></div>`;
+  }).join('');
+  document.querySelectorAll('#upList .uprow').forEach(r => {
+    const f = UP.files.find(x => x.key === r.dataset.k);
+    r.querySelector('.rm').onclick = () => { UP.files = UP.files.filter(x => x !== f); renderUpList(); };
+    r.querySelectorAll('.seg button').forEach(b => b.onclick = () => { f.kind = b.dataset.v; renderUpList(); });
+  });
+  const n = UP.files.length;
+  $('#upShared').hidden = !n;
+  $('#upGo').disabled = !n;
+  $('#upGo').textContent = n > 1 ? `Upload ${n}` : 'Upload';
+  formDirty = n > 0;
+}
+function renderUpTags() {
+  $('#upTags').innerHTML = UP.tags.map(pid => `<span class="chip">${esc(cardName(P(pid)))}<button type="button" aria-label="Untag ${esc(cardName(P(pid)))}" data-untag="${esc(pid)}">×</button></span>`).join('') || '<span class="muted">Nobody yet.</span>';
+  $('#upTags').querySelectorAll('[data-untag]').forEach(b => b.onclick = () => { UP.tags = UP.tags.filter(x => x !== b.dataset.untag); renderUpTags(); });
+}
+function renderUpTagList() {
+  const q = $('#upTagQ').value.toLowerCase().trim();
+  const hits = q ? [...G.people.values()].filter(p => !p.placeholder && !UP.tags.includes(p.id) && nameMatches(p, q)).slice(0, 6) : [];
+  $('#upTagList').innerHTML = q ? hits.map(p => `<button type="button" data-id="${p.id}">${listName(p)}</button>`).join('') || '<p class="hint">Nobody by that name yet.</p>' : '';
+  $('#upTagList').querySelectorAll('button').forEach(b => b.onclick = () => { UP.tags.push(b.dataset.id); $('#upTagQ').value = ''; renderUpTagList(); renderUpTags(); });
+}
+function loadImg(url) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; }); }
+function blobToB64(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); }); }
+function drawTo(im, max, q) {
+  const s = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(im.naturalWidth * s)); c.height = Math.max(1, Math.round(im.naturalHeight * s));
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(im, 0, 0, c.width, c.height);
+  return c;
+}
+/* Shrinks an image the browser can read; anything else goes up as it is, within 10 MB. */
+async function prepareUpload(f) {
+  if (f.type !== 'application/pdf') {
+    let im = null;
+    try { im = await loadImg(f.url); } catch (e) { im = null; }
+    if (im && im.naturalWidth) {
+      const big = drawTo(im, f.kind === 'document' ? 2400 : 1600);
+      const blob = await new Promise(r => big.toBlob(r, 'image/jpeg', 0.85));
+      if (blob) return { b64: await blobToB64(blob), mime: 'image/jpeg', thumb: drawTo(im, 320).toDataURL('image/jpeg', 0.7) };
+    }
+  }
+  if (f.file.size > FILE_MAX) throw new Error(`${f.file.name} is over 10 MB.`);
+  return { b64: await blobToB64(f.file), mime: f.type, thumb: '' };
+}
+async function doUpload() {
+  if (saving || !UP || !UP.files.length) return;
+  showUpErr('');
+  const rows = UP.files.map(f => {
+    const r = document.querySelector(`#upList .uprow[data-k="${f.key}"]`);
+    return { f, caption: r.querySelector('.upcap').value.trim(), when: r.querySelector('.upwhen').value.trim() };
+  });
+  try { rows.forEach(x => { x.date = toFuzzy(x.when, `When (${x.f.file.name || 'photo'})`); }); }
+  catch (err) { showUpErr(err.message); return; }
+  const place = $('#upPlace').value.trim(), source = $('#upSource').value.trim(), tags = [...UP.tags];
+  const btn = $('#upGo'), anchor = UP.anchor, total = rows.length;
+  saving = true; btn.disabled = true; $('#upCancel').disabled = true;
+  let done = 0;
+  for (const x of rows) {
+    btn.textContent = total > 1 ? `Uploading ${done + 1} of ${total}…` : 'Uploading…';
+    try {
+      const prep = await prepareUpload(x.f);
+      const res = await api({ action: 'upload_photo', image: prep.b64, mime: prep.mime, kind: x.f.kind, caption: x.caption,
+        date_taken: x.date, place, source, tags });
+      saveThumb(res.id, prep.thumb);
+      UP.files = UP.files.filter(f => f !== x.f);
+      done++;
+    } catch (err) {
+      saving = false; $('#upCancel').disabled = false;
+      renderUpList();
+      showUpErr(`${x.f.file.name || 'A file'} didn't upload: ${err.message}${done ? ` The ${done} before it went through.` : ''} Tap Upload to try again.`);
+      if (done) reload();
+      return;
+    }
+  }
+  saving = false; formDirty = false; UP = null;
+  closePanel();
+  toast(ADMIN_KEY ? (done > 1 ? `Added ${done}.` : 'Added.')
+    : `Sent${done > 1 ? ' ' + done : ''}. You'll see ${done > 1 ? 'them' : 'it'} now, marked Unconfirmed, until ${OWNER_NAME} confirms.`);
+  await reload();
+  if (G.people.has(anchor)) openPerson(anchor);
+}
 
 /* =====================================================================
  * How much to show (2026-11-22): Open all became a menu with four levels, each adding to the one before.
@@ -2368,7 +2749,7 @@ function bloodLink(a, b) {
   return { da, db, apex };
 }
 const upPath = (from, to) => { const A = ancestry(from), out = []; let c = to; while (c) { out.unshift(c); c = A.get(c).via; } return out; };   // from ... to
-const gw = (p, m, f, n) => (p && !isLiving(p) && p.sex === 'male') ? m : (p && !isLiving(p) && p.sex === 'female') ? f : n;
+const gw = (p, m, f, n) => (p && p.sex === 'male') ? m : (p && p.sex === 'female') ? f : n;   // gender is public since 2026-11-22
 const ORD = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth'];
 const TIMES = ['', 'once', 'twice', 'three times', 'four times', 'five times'];
 // The word for b, seen from a, when b is da generations below a shared ancestor that is da generations above a.
@@ -2717,6 +3098,7 @@ const INTRO = [
     <h1>Which one is you?</h1>
     <p>Find yourself so the tree knows where you fit and opens on you.</p>
     <ol class="isteps"><li><b>Type your name</b> in the box. First or last name is enough.</li><li><b>Tap your name</b> in the list that appears.</li></ol>
+    <p class="ihidden">${ICON.lock}<span>Until ${OWNER_NAME} confirms it's you, some things stay hidden from you: living relatives' birthdays, birthplaces and stories. Names, and everything about relatives who have passed, show now.</span></p>
     <div class="field"><label for="iName">Your name</label><input id="iName" placeholder="Start typing your name" autocomplete="off" autocapitalize="words"></div>
     <div class="pick" id="iList"></div>
     <div class="iadd"><span>Not in the list?</span><button class="primary" id="iAdd" type="button">Add myself</button></div>
@@ -2942,7 +3324,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = 'e195dd5c8e';
+  const BUILD = '83369ee6b7';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

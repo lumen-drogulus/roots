@@ -33,7 +33,7 @@ function bloodLink(a, b) {
   return { da, db, apex };
 }
 const upPath = (from, to) => { const A = ancestry(from), out = []; let c = to; while (c) { out.unshift(c); c = A.get(c).via; } return out; };   // from ... to
-const gw = (p, m, f, n) => (p && !isLiving(p) && p.sex === 'male') ? m : (p && !isLiving(p) && p.sex === 'female') ? f : n;
+const gw = (p, m, f, n) => (p && p.sex === 'male') ? m : (p && p.sex === 'female') ? f : n;   // gender is public since 2026-11-22
 const ORD = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth'];
 const TIMES = ['', 'once', 'twice', 'three times', 'four times', 'five times'];
 // The word for b, seen from a, when b is da generations below a shared ancestor that is da generations above a.

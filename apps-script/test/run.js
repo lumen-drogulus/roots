@@ -44,33 +44,90 @@ test('admin seed is approved immediately and sets the owner', () => {
   assert.strictEqual(tree.meta.owner_person_id, ids['new:me']);
 });
 
-test('living people show names only: first, middle, goes-by, current last', () => {
+test('public view of a living person: names, maiden name, gender, birth year, source; nothing else', () => {
   const { t, ids } = setup();
   const tree = t.get({ action: 'tree' });
+  assert.strictEqual(tree.meta.view, 'public');
   const mom = tree.people.find(p => p.id === ids['new:mom']);
-  assert.deepStrictEqual(Object.keys(mom).sort(), ['added_by', 'first_name', 'id', 'is_placeholder', 'last_name', 'living', 'middle_name', 'nicknames'].sort());
-  assert.strictEqual(mom.first_name, 'Carol');
+  assert.deepStrictEqual(Object.keys(mom).sort(), ['added_by', 'birth_date', 'birth_surname', 'first_name', 'id', 'is_placeholder',
+    'last_name', 'living', 'married_names', 'middle_name', 'nicknames', 'sex', 'source'].sort());
   assert.strictEqual(mom.last_name, 'Ruzicka');
-  assert.strictEqual(mom.living, true);
+  assert.strictEqual(mom.birth_surname, 'Maidenly');
+  assert.strictEqual(mom.sex, 'female');
+  assert.strictEqual(mom.birth_date, 'exact:1950');
 });
 
-test('no private value appears anywhere in the public response', () => {
+test('no family-only value appears anywhere in the public response', () => {
   const { t } = setup();
   const raw = JSON.stringify(t.get({ action: 'tree' }));
-  for (const secret of ['Maidenly', 'MOM-PRIVATE-NOTE', 'JONNY-PRIVATE-NOTE', 'Cleveland', '1950', '1975',
-    TOK_JONNY, 'C-', 'merge_log', 'token', 'female']) {
+  for (const secret of ['MOM-PRIVATE-NOTE', 'JONNY-PRIVATE-NOTE', 'Cleveland', '1950-01', '1975-04', 'adopted',
+    TOK_JONNY, 'C-', 'merge_log', 'token', 'adoption_shown', 'living_raw']) {
     assert.ok(!raw.includes(secret), 'leaked: ' + secret);
   }
 });
 
-test('middle name and goes-by are public, even for living people', () => {
+test('family view: an approved "this is me" sees living birthdays, places and notes, but not adoption', () => {
+  const { t, ids } = setup();
+  const tree = t.post({ action: 'tree', token: TOK_JONNY });   // Jonny's claim was approved with the seed; no key sent
+  assert.strictEqual(tree.meta.view, 'family');
+  const mom = tree.people.find(p => p.id === ids['new:mom']);
+  assert.strictEqual(mom.birth_date, 'exact:1950-01-01');
+  assert.strictEqual(mom.birth_place, 'Cleveland, Ohio');
+  assert.strictEqual(mom.notes, 'MOM-PRIVATE-NOTE');
+  assert.strictEqual(mom.living_raw, undefined);
+  assert.strictEqual(tree.relationships.find(r => r.b === ids['new:kid']).subtype, 'parent');
+});
+
+test('a pending claim still gets the public view; approving it opens the family view', () => {
+  const { t, key, ids } = setup();
+  t.post({ action: 'submit', token: TOK_LINDA, items: [{ kind: 'claim', person: ids['new:kid'] }] });
+  assert.strictEqual(t.post({ action: 'tree', token: TOK_LINDA }).meta.view, 'public');
+  const q = t.post({ action: 'admin_queue', key });
+  t.post({ action: 'admin_approve', key, items: q.batches[0].items.map(i => ({ kind: i.kind, id: i.row.id })) });
+  assert.strictEqual(t.post({ action: 'tree', token: TOK_LINDA }).meta.view, 'family');
+});
+
+test('owner view: the key on the tree call returns every field, including adoption', () => {
+  const { t, key, ids } = setup();
+  const tree = t.post({ action: 'tree', key, token: TOK_JONNY });
+  assert.strictEqual(tree.meta.view, 'owner');
+  const me = tree.people.find(p => p.id === ids['new:me']);
+  assert.strictEqual(me.birth_date, 'exact:1975-04-02');
+  assert.strictEqual(me.notes, 'JONNY-PRIVATE-NOTE');
+  assert.strictEqual(tree.relationships.find(r => r.b === ids['new:kid']).subtype, 'adopted');
+  assert.strictEqual(t.post({ action: 'tree', key: 'wrong-key-wrong-key-wrong', token: TOK_STRANGER }).meta.view, 'public');
+});
+
+test('adoption is the adopted person\'s choice: only they (or the owner) can show it', () => {
+  const { t, key, ids } = setup();
+  const kid = ids['new:kid'];
+  let r = t.post({ action: 'set_adoption_shown', token: TOK_STRANGER, person_id: kid, shown: true });
+  assert.strictEqual(r.ok, false);
+  t.post({ action: 'submit', token: TOK_LINDA, items: [{ kind: 'claim', person: kid }] });
+  r = t.post({ action: 'set_adoption_shown', token: TOK_LINDA, person_id: kid, shown: true });
+  assert.strictEqual(r.ok, false, 'a pending claim cannot choose');
+  const q = t.post({ action: 'admin_queue', key });
+  t.post({ action: 'admin_approve', key, items: q.batches[0].items.map(i => ({ kind: i.kind, id: i.row.id })) });
+  const own = t.post({ action: 'tree', token: TOK_LINDA }).own;
+  assert.strictEqual(own.adoption.person_id, kid);
+  assert.strictEqual(own.adoption.shown, false);
+  assert.strictEqual(own.adoption.links[0].subtype, 'adopted');
+  r = t.post({ action: 'set_adoption_shown', token: TOK_LINDA, person_id: kid, shown: true });
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.strictEqual(t.get({}).relationships.find(x => x.b === kid).subtype, 'adopted');
+  r = t.post({ action: 'set_adoption_shown', token: TOK_LINDA, person_id: ids['new:mom'], shown: true });
+  assert.strictEqual(r.ok, false, 'not about them');
+  t.post({ action: 'set_adoption_shown', key, token: TOK_JONNY, person_id: kid, shown: false });
+  assert.strictEqual(t.get({}).relationships.find(x => x.b === kid).subtype, 'parent');
+});
+
+test('middle name and nickname are public, even for living people', () => {
   const { t, ids } = setup();
   const mom = t.get({}).people.find(p => p.id === ids['new:mom']);
   assert.strictEqual(mom.living, true);
   assert.strictEqual(mom.middle_name, 'Ann');
   assert.strictEqual(mom.nicknames, 'Cee');
-  assert.strictEqual(mom.last_name, 'Ruzicka');
-  assert.strictEqual(mom.birth_surname, undefined);
+  assert.deepStrictEqual(mom.married_names, ['Ruzicka']);
 });
 
 test('former partners (never married) are accepted', () => {
@@ -279,10 +336,43 @@ test('photos: pending private, approval publishes, queue flags living people', (
   assert.strictEqual(t.get({}).photos.length, 0);
 });
 
-test('photo uploads reject non-images', () => {
+test('photo uploads reject other file types', () => {
   const { t } = setup();
   const r = t.post({ action: 'upload_photo', token: TOK_LINDA, image: 'aGk=', mime: 'text/html' });
   assert.strictEqual(r.ok, false);
+  assert.ok(/PDFs work/.test(r.error));
+});
+
+test('documents: PDFs accepted as documents; one tagging a living person is family only', () => {
+  const { t, key, ids } = setup();
+  const pdf = Buffer.from('%PDF-1.4 fake').toString('base64');
+  const doc = t.post({ action: 'upload_photo', token: TOK_LINDA, image: pdf, mime: 'application/pdf', caption: 'Birth certificate', tags: [ids['new:mom']] });
+  assert.ok(doc.ok, JSON.stringify(doc));
+  const gpaDoc = t.post({ action: 'upload_photo', token: TOK_LINDA, image: pdf, mime: 'application/pdf', caption: 'Obituary', tags: [ids['new:gpa']] });
+  const scan = t.post({ action: 'upload_photo', token: TOK_LINDA, image: Buffer.from('jpg').toString('base64'), mime: 'image/jpeg', kind: 'document', caption: 'Letter', tags: [ids['new:mom']] });
+  const own = t.get({ token: TOK_LINDA }).own.photos;
+  assert.deepStrictEqual(own.map(f => f.kind), ['document', 'document', 'document']);
+  assert.strictEqual(own[0].mime, 'application/pdf');
+  assert.strictEqual(own[0].thumbnail, undefined, 'no Drive call per photo on tree load');
+  const q = t.post({ action: 'admin_queue', key });
+  const qp = q.batches.flatMap(b => b.items).filter(i => i.kind === 'photo');
+  assert.strictEqual(qp.length, 3, 'queue items keep kind "photo"');
+  assert.ok(qp.every(i => i.photo_kind === 'document'));
+  t.post({ action: 'admin_approve', key, items: [doc, gpaDoc, scan].map(x => ({ kind: 'photo', id: x.id })) });
+  const pub = t.get({}).photos;
+  assert.deepStrictEqual(pub.map(f => f.caption), ['Obituary'], 'documents of living people stay off the public view');
+  const fam = t.post({ action: 'tree', token: TOK_JONNY }).photos;
+  assert.strictEqual(fam.length, 3);
+  assert.strictEqual(fam.find(f => f.caption === 'Birth certificate').mime, 'application/pdf');
+  const prev = t.post({ action: 'admin_photo', key, id: doc.id });
+  assert.ok(prev.preview && /^data:image/.test(prev.data_url), 'a PDF previews as Drive\'s picture of it');
+});
+
+test('own_thumb: only your own pending photo', () => {
+  const { t } = setup();
+  const up = t.post({ action: 'upload_photo', token: TOK_LINDA, image: Buffer.from('x').toString('base64'), mime: 'image/jpeg' });
+  assert.ok(/^data:image/.test(t.post({ action: 'own_thumb', token: TOK_LINDA, id: up.id }).thumbnail));
+  assert.strictEqual(t.post({ action: 'own_thumb', token: TOK_STRANGER, id: up.id }).ok, false);
 });
 
 test('merge folds a duplicate in, and unmerge restores the exact prior state', () => {

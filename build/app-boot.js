@@ -28,6 +28,7 @@ const INTRO = [
     <h1>Which one is you?</h1>
     <p>Find yourself so the tree knows where you fit and opens on you.</p>
     <ol class="isteps"><li><b>Type your name</b> in the box. First or last name is enough.</li><li><b>Tap your name</b> in the list that appears.</li></ol>
+    <p class="ihidden">${ICON.lock}<span>Until ${OWNER_NAME} confirms it's you, some things stay hidden from you: living relatives' birthdays, birthplaces and stories. Names, and everything about relatives who have passed, show now.</span></p>
     <div class="field"><label for="iName">Your name</label><input id="iName" placeholder="Start typing your name" autocomplete="off" autocapitalize="words"></div>
     <div class="pick" id="iList"></div>
     <div class="iadd"><span>Not in the list?</span><button class="primary" id="iAdd" type="button">Add myself</button></div>

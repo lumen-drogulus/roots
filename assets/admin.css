@@ -96,3 +96,7 @@ a.btn { text-decoration: none; color: var(--ink); }
 .infopop p { margin: 0; }
 .infopop p + p { margin-top: 7px; }
 .infopop b { color: #C9A35A; font-weight: 600; }
+.phrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 8px; }
+.phrow .thumb { margin-top: 0; }
+.thumb.wait { display: grid; place-items: center; font-size: 12px; color: var(--ink-soft, #4A564F); text-align: center; padding: 6px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }

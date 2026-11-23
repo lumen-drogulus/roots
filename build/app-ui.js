@@ -132,10 +132,6 @@ function openPerson(id) {
   let body = '';
   if (p.placeholder) {
     body += `<p class="story">Nobody has named this person yet. If you know who ${rel ? 'this ' + rel.toLowerCase() : 'they'} ${living ? 'is' : 'was'}, fill in what you know. Even a first name helps.</p>`;
-  } else if (living && !p.pending) {
-    body += id === STATE.viewer
-      ? `<div class="private">${ICON.lock}<span>Relatives see only your names. Your dates, places and stories stay private. ${OWNER_NAME} can see everything.</span></div>`
-      : `<div class="private">${ICON.lock}<span>${esc(p.first)} is living, so only their names show here. Dates, places, maiden name and stories stay private while they're alive.</span></div>`;
   } else {
     const facts = [];
     if (p.bornRaw || p.bornPlace) facts.push(`<dt>Born</dt><dd>${esc([fuzzyLong(p.bornRaw), p.bornPlace].filter(Boolean).join(', '))}</dd>`);
@@ -144,8 +140,10 @@ function openPerson(id) {
     if (hist) facts.push(`<dt>Last names</dt><dd>${hist}</dd>`);
     if (facts.length) body += `<dl class="facts">${facts.join('')}</dl>`;
     if (p.notes) body += `<p class="story">${esc(p.notes)}</p>`;
-    if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
+    if (living && !p.pending) body += privacyNote(p);
+    else if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
   }
+  body += adoptionBox(id);
   const kindWords = { step: 'step-parent', adopted: 'adoptive parent', foster: 'foster parent' };
   const kinLines = [
     ...parentsOf(id).filter(q => kindWords[G.pcSub.get(q + '>' + id)]).map(q => `${esc(displayName(P(q)))} is ${esc(p.first || 'their')}'s ${kindWords[G.pcSub.get(q + '>' + id)]}.`),
@@ -162,12 +160,8 @@ function openPerson(id) {
   const work = ownWork(id);
   if (work.length) body += `<div class="ownwork"><span class="owhead">Waiting for ${OWNER_NAME}. Only you see ${work.length > 1 ? 'these' : 'this'} until he confirms.</span>${work.map((w, i) =>
     `<div class="owrow" data-tbrow><span>${w.text}</span><button class="nbtn" data-tb="${i}">Take back</button></div>`).join('')}</div>`;
-  if (!p.placeholder && !p.pending) {
-    const ph = PHOTOS.get(id) || [];
-    const tiles = ph.slice(0, 6).map(f => `<a class="photo real" href="${photoURL(f.file_id, 1600)}" target="_blank" rel="noopener" title="${esc(f.caption || 'Photo')}"><img src="${photoURL(f.file_id, 400)}" alt="${esc(f.caption || 'Photo of ' + p.first)}" loading="lazy"></a>`).join('');
-    body += `<div><div class="label">Photos &amp; documents</div><div class="photos">${tiles}<button class="photo add" id="pAddPhoto">Add photos or documents</button></div></div>`;
-  }
-  if (!p.placeholder && !living && p.addedBy) body += `<p class="prov">Added by ${esc(p.addedBy)}${p.source ? ' · Source: ' + esc(p.source) : ''}</p>`;
+  if (!p.placeholder) body += photoSectionHTML(id);
+  if (!p.placeholder && (p.addedBy || p.source) && !p.pending) body += `<p class="prov">${[p.addedBy ? 'Added by ' + esc(p.addedBy) : '', p.source ? 'Source: ' + esc(p.source) : ''].filter(Boolean).join(' · ')}</p>`;
   const isFocus = id === STATE.focus;
   const canClaim = !STATE.viewer && !p.placeholder && living;
   openPanel(`
@@ -196,7 +190,9 @@ function openPerson(id) {
   $('#pAdd').onclick = () => openAdd(id);
   if ($('#pEdit')) $('#pEdit').onclick = () => openEdit(id);
   if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);
-  const ap = $('#pAddPhoto'); if (ap) ap.onclick = () => toast('Adding photos and documents is coming soon.');
+  wirePhotoSection(id);
+  wireAdoptionBox(id);
+  const pf = $('#pFindMe'); if (pf) pf.onclick = () => { closePanel(); openIntro(2); };
   document.querySelectorAll('.nudge').forEach(n => {
     const [a, b] = n.dataset.pair.split('>');
     n.querySelector('[data-no]').onclick = () => {
@@ -243,10 +239,10 @@ function namesFromPerson(p) {
 const PC_KINDS = [['biological', 'Birth'], ['step', 'Step'], ['adopted', 'Adoptive'], ['foster', 'Foster']];
 /* Info buttons on the choices where a wrong guess writes something Jonny then has to untangle (2026-11-22). */
 const INFO = {
-  parent: `**Birth:** the parent they were born to.\n**Step:** married to or partnered with one of their parents, but not their parent by birth or adoption.\n**Adoptive:** legally adopted them.\n**Foster:** raised them in foster care without adopting.\nWhile either of them is living, adoptive and foster show to everyone as plain "parent".`,
+  parent: `**Birth:** the parent they were born to.\n**Step:** married to or partnered with one of their parents, but not their parent by birth or adoption.\n**Adoptive:** legally adopted them.\n**Foster:** raised them in foster care without adopting.\nWhile the child is living, adoptive and foster show as plain "parent" unless the child chooses to show it.`,
   sibling: `**Full:** the same two parents.\n**Half:** one parent in common. You'll pick which one, so their line comes from the right parent.\n**Step:** no parent in common. One of their parents is with one of the other's parents.`,
   couple: `**Married:** married now.\n**Partners:** together now, not married.\n**Divorced:** were married, aren't now.\n**Former partners:** were together, never married, and aren't together now.\n**Widowed:** married until one of them died.`,
-  living: `**Living:** only their names show. Dates, places, maiden name and stories stay private while they're alive.\n**Passed away:** everything you add shows once ${OWNER_NAME} confirms it.\n**Not sure:** treated like Living, so their details stay hidden from everyone, including you, until someone marks them Passed away.`,
+  living: `**Living:** everyone sees their names, gender and birth year. Their birthday, birthplace and story show only to family ${OWNER_NAME} has confirmed.\n**Passed away:** everything you add shows once ${OWNER_NAME} confirms it.\n**Not sure:** treated like Living until someone marks them Passed away.`,
   which: `**Someone new:** they aren't on the tree yet.\n**Already in the tree:** they're on it somewhere, maybe as Unknown. Pick them from the list so they get linked, not added a second time.\nAdding someone who's already there makes a duplicate that ${OWNER_NAME} has to merge by hand.`
 };
 /* A link that shouldn't exist (a mis-tapped "Yes, link them", the wrong parent picked): chosen in Edit, sent as a
@@ -280,7 +276,7 @@ function parentKindsHTML(id) {
   });
   const masked = parentsOf(id).some(q => PC_ID.has(q + '>' + id) && !PC_KINDS.some(([v]) => v === G.pcSub.get(q + '>' + id)));
   return rows.length ? `<div class="label">${esc(P(id).first || 'Their')}'s parents ${infoBtn(INFO.parent)}</div><div class="row2">${rows.join('')}</div>` +
-    (masked ? '<p class="hint">"Keep as is": while someone is living, whether a parent is by birth, adoption or fostering stays private, so it isn\'t shown here.</p>' : '') : '';
+    (masked ? '<p class="hint">"Keep as is": while someone is living, whether a parent is by birth, adoption or fostering is theirs to share, so it isn\'t shown here.</p>' : '') : '';
 }
 const nameRowHTML = (v = '') => `<div class="namerow"><input class="fOtherName" value="${esc(v)}" autocomplete="off" aria-label="Earlier last name"><button type="button" class="rm" aria-label="Remove this last name">×</button></div>`;
 function addNameRow(v = '', focus = true) {
@@ -316,7 +312,7 @@ function fieldsHTML(p, livingV, opts = {}) {
     ${noName ? `<label class="kid noname"><input type="checkbox" id="fNoName"${unk ? ' checked' : ''}><span>I don't know their name</span></label>
     <p class="hint" id="fNoNameHint"${unk ? '' : ' hidden'}>They'll show as Unknown. Add what you do know below, and anyone who knows the name can fill it in later.</p>` : ''}
     <div class="field"><label for="fSex">Gender</label><select id="fSex">${[['', 'Not sure, or rather not say'], ['female', 'Female'], ['male', 'Male'], ['other', 'Other']].map(([v, t]) => `<option value="${v}"${(p.sex || '') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
-      <p class="hint">Lets the tree say mother or grandson instead of parent or grandchild. Private while they're living${opts.edit && isLiving(p) && !p.pending ? ', so it shows blank here even if someone already chose one' : ''}.</p></div>
+      <p class="hint">Lets the tree say mother or grandson instead of parent or grandchild.</p></div>
     ${livingSeg(self ? 'living' : livingV, self)}
     ${self ? `<div class="field"><label for="fBorn">When were you born?</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1952, or May 14, 1952"></div>
     <div class="field"><label for="fPlace">Where were you born?</label><input id="fPlace" value="${esc(p.bornPlace || '')}" placeholder="&quot;Cleveland&quot; or &quot;somewhere in Ohio&quot; is fine"></div>
@@ -329,8 +325,8 @@ function fieldsHTML(p, livingV, opts = {}) {
     ${self ? '' : `<div class="field"><label for="fSource">Information source</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(opts.edit ? '' : (p.source || ''))}"></div>
     ${whoField()}`}
     <p class="formerr" id="formErr" role="alert" hidden></p>
-    <p class="hint" id="fNameHint">${self ? 'Only your first name is needed. While you\'re living, only your names show on the tree; your birthday, birthplace and notes stay private.'
-      : 'Only a name is needed, and "I don\'t know their name" works too. For living people, only names show (first, middle, nickname, last now); everything else stays private.'}</p>`;
+    <p class="hint" id="fNameHint">${self ? `Only your first name is needed. Everyone sees your names, gender and birth year; your birthday, birthplace and notes show only to family ${OWNER_NAME} has confirmed.`
+      : `Only a name is needed, and "I don't know their name" works too. For living people, everyone sees names, gender and birth year; birthdays, birthplaces and stories show only to family ${OWNER_NAME} has confirmed.`}</p>`;
 }
 const isNoName = q => !q.placeholder && sameName(q.first, 'Unknown') && !q.middle && !q.last && !q.nicknames;
 // "Mom", "great Grandma", "Uncle Rob": what the person typing calls them, not a nickname. A gentle note, never a block.
@@ -886,6 +882,53 @@ async function claimMe(id) {
 }
 
 /* =====================================================================
+ * Who sees what (2026-11-22): three views, chosen by the server. The note on a living person's card says which
+ * one this device has, and how to get the fuller one.
+ * ===================================================================== */
+const VIEW = () => (TREE && TREE.meta && TREE.meta.view) || 'public';
+function privacyNote(p) {
+  const v = VIEW(), mine = p.id === STATE.viewer;
+  const box = (t, extra = '') => `<div class="private">${ICON.lock}<span>${t}</span>${extra}</div>`;
+  if (v === 'owner') return box(`Everyone with the link sees ${esc(p.first || 'their')}'s names, gender and birth year. The birthday, birthplace and story show only to family you've confirmed.`);
+  if (v === 'family') return box(mine
+    ? `Everyone with the link sees your names, gender and birth year. Your birthday, birthplace and notes show only to family ${OWNER_NAME} has confirmed.`
+    : `You see ${esc(p.first || 'their')}'s birthday, birthplace and story because ${OWNER_NAME} has confirmed you. Others with the link see names, gender and birth year.`);
+  if (mine) return box(`${OWNER_NAME} hasn't confirmed it's you yet. Once he does, you'll see living relatives' birthdays, birthplaces and stories too.`);
+  return box(`${esc(p.first || 'They')} is living. Their birthday, birthplace and story show to family once ${OWNER_NAME} confirms who you are.`,
+    STATE.viewer ? '' : '<button class="nbtn" id="pFindMe">Find me or add me</button>');
+}
+/* Adoption is the adopted person's choice (Jonny, 2026-11-22). Their own card asks; the owner sees it on anyone's. */
+function adoptionBox(id) {
+  const own = (TREE && TREE.own && TREE.own.adoption) || null;
+  const p = P(id);
+  let links, shown, mine = false;
+  if (own && own.person_id === id) { links = own.links; shown = own.shown; mine = true; }
+  else if (VIEW() === 'owner' && isLiving(p)) {
+    links = parentsOf(id).map(q => ({ a: q, subtype: G.pcSub.get(q + '>' + id) })).filter(l => l.subtype === 'adopted' || l.subtype === 'foster');
+    shown = !!p.adoptionShown;
+  }
+  if (!links || !links.length) return '';
+  const names = andList(links.map(l => displayName(P(l.a)) || 'a parent'));
+  const word = links.every(l => l.subtype === 'foster') ? 'fostered' : 'adopted';
+  const who = mine ? 'you' : esc(p.first || 'them');
+  const text = shown
+    ? `The tree shows that ${esc(names)} ${word} ${who}.`
+    : `The tree shows ${esc(names)} as ${mine ? 'your' : esc(p.first || 'their') + "'s"} ${links.length > 1 ? 'parents' : 'parent'}, without saying ${who} ${mine ? 'were' : 'was'} ${word}.`;
+  const whose = mine ? 'This is your choice.' : `${esc(p.first || 'They')} can choose this on their own card once they've said who they are. You can too.`;
+  return `<div class="adoptbox"><span>${text} ${whose}</span><button class="nbtn" id="pAdopt" data-show="${shown ? '' : '1'}">${shown ? 'Keep it private' : 'Show it on the tree'}</button></div>`;
+}
+function wireAdoptionBox(id) {
+  const b = $('#pAdopt'); if (!b) return;
+  b.onclick = async () => {
+    b.disabled = true;
+    try { await api({ action: 'set_adoption_shown', person_id: id, shown: !!b.dataset.show }); }
+    catch (err) { b.disabled = false; toast(err.message); return; }
+    toast(b.dataset.show ? 'Done. The tree shows it now.' : 'Done. It stays private.');
+    await reload(); openPerson(id);
+  };
+}
+
+/* =====================================================================
  * Pages: thank you, send to family, search
  * ===================================================================== */
 let pendingReload = false;
@@ -908,9 +951,12 @@ function openSend() {
     <div class="head"><div><h2>Send Roots to a family member</h2><div class="sub">${v ? `The link opens the tree on you, ${esc(v.first)}, so they start somewhere familiar.` : 'Tip: tap your own card and choose "This is me" first, so the link opens the tree on you.'}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <div class="body sendbox">
+      <div class="sendwarn"><b>Think about who you send this to.</b>
+        <span>Roots has no passwords or sign-up, on purpose: anyone in the family can open it with one tap, no account, nothing to forget. That also means anyone you send the link to can look around the tree, and so can anyone they send it on to.</span>
+        <span>Send it to relatives, one at a time. Not to a public post or a big group chat.</span></div>
       <div class="field"><label for="sMsg">Message</label><textarea id="sMsg" style="min-height:140px">${esc(msg)}</textarea></div>
       <div class="field"><label for="sLink">Link</label><div class="linkrow"><input id="sLink" readonly value="${esc(shareLink())}"><button class="iconbtn" id="sCopyLink">Copy link</button></div></div>
-      <p class="hint">Anyone with the link sees the tree as it stands. Living people show by first and last name only.</p>
+      <p class="hint">Anyone with the link sees the tree as it stands. For living people that's names, gender and birth year. Birthdays, birthplaces and stories show only to family ${OWNER_NAME} has confirmed.</p>
     </div>
     <div class="foot">${navigator.share ? '<button class="iconbtn" id="sShare">Share…</button>' : ''}<button class="primary" id="sCopy">Copy message</button></div>`);
   $('#pClose').onclick = closePanel;

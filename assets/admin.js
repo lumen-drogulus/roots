@@ -124,7 +124,8 @@ $('#gateForm').onsubmit = async e => {
   try { await working($('#gateForm button[type="submit"]'), 'Unlocking…', () => unlock(k)); }
   catch (err) { KEY = ''; if (err.message === KEY_REJECTED) store.del('roots_admin_key'); gateError(err); }
 };
-$('#btnLock').onclick = () => { store.del('roots_admin_key'); location.reload(); };
+// Locking also forgets the tree this device saved in owner mode, which holds every private field.
+$('#btnLock').onclick = () => { store.del('roots_admin_key'); store.del('roots_cache'); location.reload(); };
 
 /* ---------- tabs ---------- */
 function tab(which) {
@@ -174,14 +175,28 @@ function describe(it) {
       return { label: 'Correction', what: `${esc(it.target_label)}: ${esc(FIELD[r.field] || r.field)}`,
         detail: `<span class="change"><s>${esc(showVal(r.field, it.current_value))}</s> → <b>${esc(showVal(r.field, it.proposed))}</b></span>${r.source ? '<br>Source: ' + esc(r.source) : ''}` };
     case 'photo': {
+      const doc = (it.photo_kind || r.kind) === 'document';
       const tagged = (it.tagged || []).map(t => t.name).join(', ') || 'nobody tagged';
-      const warn = (it.living_tagged || []).length ? `<div class="livingwarn">Shows ${it.living_tagged.length} living ${it.living_tagged.length === 1 ? 'person' : 'people'}: ${esc(it.living_tagged.map(p => p.name).join(', '))}. Approving makes this photo public.</div>` : '';
-      return { label: 'New photo', what: esc(r.caption || 'Photo'), detail: `Tagged: ${esc(tagged)}${it.thumbnail ? `<img class="thumb" src="${it.thumbnail}" alt="Photo preview">` : ''}${warn}` };
+      const lv = it.living_tagged || [], names = esc(lv.map(p => p.name).join(', '));
+      const warn = !lv.length ? '' : doc
+        ? `<div class="livingwarn">Document about ${lv.length} living ${lv.length === 1 ? 'person' : 'people'}: ${names}. It may show a birthday, birthplace or other details the tree keeps to family. Approving shows it to confirmed family only, not to everyone with the link. Check it before approving.</div>`
+        : `<div class="livingwarn">Shows ${lv.length} living ${lv.length === 1 ? 'person' : 'people'}: ${names}. Approving makes this photo public.</div>`;
+      const file = r.drive_file_id ? `<a class="btn" href="https://drive.google.com/file/d/${encodeURIComponent(r.drive_file_id)}/view" target="_blank" rel="noopener">Open the file</a>` : '';
+      const pic = it.thumbnail ? `<img class="thumb" src="${it.thumbnail}" alt="Preview">` : `<span class="thumb wait" data-preview="${esc(r.id)}">Preview loading…</span>`;
+      const meta = [r.date_taken && fuzzy(r.date_taken), r.place, r.source && 'Source: ' + r.source].filter(Boolean).join(' · ');
+      return { label: doc ? 'New document' : 'New photo', what: esc(r.caption || (doc ? 'Document' : 'Photo')),
+        detail: `Tagged: ${esc(tagged)}${meta ? ' · ' + esc(meta) : ''}<div class="phrow">${pic}${file}</div>${warn}` };
     }
-    case 'tag':
-      return { label: 'Photo tag', what: `${esc(it.person_label)} tagged in a photo`, detail: it.living ? '<div class="livingwarn">This person is living. Approving shows them in a public photo.</div>' : '' };
+    case 'tag': {
+      const doc = it.photo_kind === 'document';
+      const what = `${esc(it.person_label)} tagged in a ${doc ? 'document' : 'photo'}${it.photo_caption ? ': ' + esc(it.photo_caption) : ''}`;
+      const warn = !it.living ? '' : doc ? '<div class="livingwarn">This person is living. Approving shows this document about them to confirmed family only. Check what it shows first.</div>'
+        : '<div class="livingwarn">This person is living. Approving shows them in a public photo.</div>';
+      const file = it.drive_file_id ? `<div class="phrow"><a class="btn" href="https://drive.google.com/file/d/${encodeURIComponent(it.drive_file_id)}/view" target="_blank" rel="noopener">Open the file</a></div>` : '';
+      return { label: doc ? 'Document tag' : 'Photo tag', what, detail: file + warn };
+    }
     case 'claim':
-      return { label: 'Who they are', what: `${esc(r.display_name || 'A relative')} says they are ${esc(it.person_label)}`, detail: 'Approve if that sounds right. Until then their additions show no name.' };
+      return { label: 'Who they are', what: `${esc(r.display_name || 'A relative')} says they are ${esc(it.person_label)}`, detail: 'Approve if that sounds right. Approving also lets them see living relatives\' birthdays, birthplaces and stories, so be sure it\'s really them. Until then their additions show no name.' };
   }
   return { label: it.kind, what: '', detail: '' };
 }
@@ -204,6 +219,16 @@ function showQueue(q) {
       </div>`; }).join('')}
     </article>`;
   }).join('');
+  // Photos Drive hasn't made a preview of yet: ask for the file itself (or Drive's picture of a PDF), one at a time.
+  (async () => {
+    for (const el of [...document.querySelectorAll('[data-preview]')]) {
+      try {
+        const res = await api('admin_photo', { id: el.dataset.preview });
+        if (res.data_url) el.outerHTML = `<img class="thumb" src="${res.data_url}" alt="Preview">`;
+        else el.textContent = 'No preview yet. Open the file to look.';
+      } catch (e) { el.textContent = 'No preview yet. Open the file to look.'; }
+    }
+  })();
   document.querySelectorAll('.batch').forEach(el => {
     const b = batches[+el.dataset.b];
     el.querySelectorAll('[data-all]').forEach(btn => btn.onclick = () => decide(el, b.items.map(it => ({ kind: it.kind, id: it.row.id })), btn.dataset.all, btn));
@@ -415,7 +440,7 @@ if (matchMedia('(hover: hover)').matches) {
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = 'e195dd5c8e';
+  const BUILD = '83369ee6b7';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

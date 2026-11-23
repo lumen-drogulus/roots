@@ -67,6 +67,10 @@ engine = rep(engine, "  if (!STATE.all) for (const key of STATE.open) {", "  if 
 engine = rep(engine, "  const v = STATE.viewer;\n  if (id === v) return 'You';", "  const v = STATE.viewer;\n  if (!v) return '';\n  if (id === v) return 'You';")
 engine = rep(engine, "$('#btnHome').onclick = () => { closePanel(); STATE.focus = STATE.viewer; render(); };\n", "")
 engine = rep(engine, "function render(opts = {}) {\n", "function render(opts = {}) {\n  if (!STATE.focus || !G.people.has(STATE.focus)) return;\n")
+# Gender is public for everyone since 2026-11-22, so living relatives get Mother, Grandson and so on too.
+engine = rep(engine, "const p = P(id), w = (m, f, n) => (!isLiving(p) && p.sex === 'male') ? m : (!isLiving(p) && p.sex === 'female') ? f : n;",
+             "const p = P(id), w = (m, f, n) => p.sex === 'male' ? m : p.sex === 'female' ? f : n;")
+engine = rep(engine, "return isLiving(p) || !p.sex ? greatX(n - 1, \"grandparent's sibling\")", "return !p.sex || p.sex === 'other' ? greatX(n - 1, \"grandparent's sibling\")")
 # Step, adoptive and foster parents: labels, separate lines, thinner dashed style.
 engine = rep(engine, "const parentsOf = id => G.parents.get(id) || [];",
   "const parentsOf = id => G.parents.get(id) || [];\nconst pcKind = (a, b) => { const s = G.pcSub.get(a + '>' + b); return s === 'step' || s === 'adopted' || s === 'foster' ? s : ''; };")
@@ -376,7 +380,7 @@ engine = rep(engine, "  if (path === 'PD') return w('Stepson', 'Stepdaughter', '
 ui = open('build/app-ui.js').read()
 assert "STATE.all" not in ui
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
-app = open('build/app-data.js').read() + '\n' + open('build/app-info.js').read() + '\n' + engine + '\n' + ui + '\n' + open('build/app-levels.js').read() + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-related.js').read() + '\n' + open('build/app-boot.js').read()
+app = open('build/app-data.js').read() + '\n' + open('build/app-info.js').read() + '\n' + engine + '\n' + ui + '\n' + open('build/app-photos.js').read() + '\n' + open('build/app-levels.js').read() + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-related.js').read() + '\n' + open('build/app-boot.js').read()
 assert 'STATE.all' not in app, 'STATE.all left over: ' + app[app.index('STATE.all') - 200:app.index('STATE.all') + 50]
 # Busy = a form or card is open: the freshness check waits rather than reload under someone's typing.
 app += "\nwindow.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || saving;\n"

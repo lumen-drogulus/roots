@@ -87,7 +87,8 @@ function fromPublic(p) {
     birthSurname: p.birth_surname || '', married,
     born: fuzzyShort(p.birth_date), died: fuzzyShort(p.death_date), bornRaw: p.birth_date || '', diedRaw: p.death_date || '',
     bornPlace: p.birth_place || '', diedPlace: p.death_place || '', notes: p.notes || '', source: p.source || '', nicknames: p.nicknames || '',
-    living: !!p.living, sex: p.sex || '', placeholder: !!p.is_placeholder, addedBy: p.added_by || ''
+    living: !!p.living, sex: p.sex || '', placeholder: !!p.is_placeholder, addedBy: p.added_by || '',
+    ...(p.living_raw ? { livingRaw: p.living_raw } : {}), adoptionShown: !!p.adoption_shown
   };
 }
 function fromOwn(p) {
@@ -166,8 +167,7 @@ function treeToGraphData(tree) {
     const raw = p.livingRaw || (p.base.placeholder ? 'unknown' : p.base.living ? 'living' : 'deceased'), born = parseFuzzy(p.bornRaw);
     p.living = !p.placeholder && (raw === 'living' || (raw !== 'deceased' && !p.diedRaw && !(born && born.q !== 'after' && born.y <= new Date().getFullYear() - 110)));
   });
-  PHOTOS.clear();
-  (tree.photos || []).forEach(f => (f.tags || []).forEach(pid => { if (!PHOTOS.has(pid)) PHOTOS.set(pid, []); PHOTOS.get(pid).push(f); }));
+  indexPhotos(tree);
   people.forEach(p => { p.photos = (PHOTOS.get(p.id) || []).length; });
   return { people, rels };
 }
