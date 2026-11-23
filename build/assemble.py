@@ -26,6 +26,7 @@ body = rep(body, '<div class="scrim" id="scrim"></div>', '''<div class="state" i
 <div class="state" id="empty" hidden></div>
 <div class="banner owner" id="ownerBar" hidden>Owner mode: what you add goes live right away.<a href="admin.html">Approvals</a></div>
 <div class="banner paused" id="paused" hidden>Adding is paused for a little while. You can still look around.</div>
+<div class="mebar" id="meBar" hidden><span>Are you on the tree?</span><button class="primary" id="meYes">Find me or add me</button><button class="iconbtn" id="meNo">Not now</button></div>
 
 <div class="scrim" id="scrim"></div>''')
 # "Show all" became a menu of four levels (2026-11-22, see build/app-levels.js); the label shows the current one.

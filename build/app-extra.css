@@ -192,3 +192,12 @@ body.pathmode #edges { opacity: .35; }
 .levelmenu .tick { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid rgba(29, 43, 36, .35); flex: none; }
 .levelmenu button[aria-checked="true"] .tick { border: 5px solid var(--ink); }
 body.wheelmode .levelmenu { display: none; }
+
+/* "Are you on the tree?" offer for a device that hasn't saved its person yet (2026-11-22) */
+.mebar { position: fixed; left: 50%; top: 66px; transform: translateX(-50%); z-index: 14; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;
+  width: max-content; max-width: calc(100% - 24px); padding: 8px 10px 8px 14px; border-radius: 16px; background: #FFFDF9; border: 1px solid rgba(169, 130, 47, .5);
+  box-shadow: 0 8px 22px rgba(23, 36, 30, .14); font-size: 14px; color: var(--ink); }
+.mebar[hidden] { display: none; }
+.mebar button { font-size: 13.5px; white-space: nowrap; }
+.mebar .iconbtn { width: auto; padding: 0 14px; }
+@media (max-width: 520px) { .mebar { padding: 10px 12px; } .mebar span { flex: 1 1 100%; text-align: center; } }

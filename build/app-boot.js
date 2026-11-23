@@ -56,14 +56,25 @@ function renderIntro() {
 }
 function openIntro(step = 0) {
   introSteps = G.people.size && !STATE.viewer ? [0, 1, 2] : [0, 1];
-  introStep = Math.min(step, introSteps.length - 1); renderIntro(); showPage('intro');
+  introStep = Math.min(step, introSteps.length - 1); renderIntro(); showPage('intro'); updateMeBar();
 }
 function finishIntro(quiet) {
   hidePage('intro');
   store.set('roots_intro_seen', '1');
   if (!quiet && G.people.size) { clearTree(); setTimeout(() => render({ camera: 'instant' }), 250); }
   if (!G.people.size) showEmpty();
+  updateMeBar();
 }
+/* Not on the tree yet (2026-11-22): the intro offers "Which one is you?" once. A relative who skipped it, or started
+   adding themselves and never finished saving, gets this standing offer until the device has a saved person.
+   "Not now" hides it until the next visit. Never in owner mode. */
+var meBarOff = false;
+function updateMeBar() {
+  $('#meBar').hidden = meBarOff || !!ADMIN_KEY || !!STATE.viewer || !G.people.size || QS.has('nointro')
+    || !$('#paused').hidden || store.get('roots_intro_seen') !== '1' || $('#intro').classList.contains('on');
+}
+$('#meYes').onclick = () => { $('#meBar').hidden = true; openIntro(2); };
+$('#meNo').onclick = () => { meBarOff = true; updateMeBar(); };
 function addMeFlow() {
   if (!G.people.size) { openAdd(null, { self: true }); return; }
   pickPerson("Who's your closest relative here?", "Pick a parent, sibling, partner or child who's already in the tree. You'll add yourself next to them.",
@@ -102,6 +113,7 @@ function applyTree(tree) {
   STATE.owner = tree.meta && tree.meta.owner_person_id;
   STATE.focus = pickFocus();
   $('#paused').hidden = !(tree.meta && tree.meta.paused) || !!ADMIN_KEY;
+  updateMeBar();
 }
 let loadedOnce = false;
 async function reload(opts = {}) {

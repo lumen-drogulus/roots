@@ -29,7 +29,7 @@ function nameMatches(p, q) {
 }
 const listName = p => `<span class="who">${esc(cardName(p))}<em>${esc(whoLine(p))}</em></span>`;
 function openPanel(html) { panel.innerHTML = html; panel.classList.add('on'); if (innerWidth <= 700) scrim.classList.add('on'); }
-function closePanel() { panel.classList.remove('on'); scrim.classList.remove('on'); formDirty = false; currentSave = null; if (STATE.selected) { STATE.selected = null; refreshCards(); } }
+function closePanel() { panel.classList.remove('on'); scrim.classList.remove('on'); formDirty = false; currentSave = null; if (STATE.selected) { STATE.selected = null; refreshCards(); }  updateMeBar(); }
 let formDirty = false, currentSave = null, sessionAdded = [], saving = false;
 function guardClose(onDiscard) {
   if (saving) return;
