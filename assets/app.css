@@ -220,6 +220,7 @@ button { font: inherit; color: inherit; }
 .banner[hidden] { display: none; }
 .banner.owner { background: var(--ink); color: #FFFDF9; }
 .banner.owner a { color: var(--gilt-light); margin-left: 8px; }
+.banner.owner .qbadge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--gilt-light); color: var(--ink); font-weight: 600; font-size: 13px; text-decoration: none; white-space: nowrap; }
 .banner.paused { background: #FFF6E0; border: 1px solid rgba(169, 130, 47, .5); color: var(--ink); top: 100px; }
 .formerr { margin: 0; padding: 10px 12px; border-radius: 10px; background: #FBE9E4; color: #7A2E1D; font-size: 14px; }
 .formerr[hidden] { display: none; }

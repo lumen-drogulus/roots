@@ -212,8 +212,26 @@ $('#btnHome').onclick = () => { closePanel(); STATE.focus = STATE.viewer || STAT
   reload().then(() => {
     if (!seen) openIntro(0);
     offerResume();
+    checkWaiting();
   });
 })();
+
+/* Waiting count on the owner bar's Approvals link (Jonny, 2026-11-22). Owner mode only: asks for the same queue the
+ * approvals page shows and counts its items, on load and when the page comes back to the front (at most once a minute).
+ * A slow or failed answer just leaves the link as it was; the approvals page itself says what went wrong. */
+let waitingAt = 0;
+function checkWaiting() {
+  if (!ADMIN_KEY || Date.now() - waitingAt < 60000) return;
+  waitingAt = Date.now();
+  const late = new Promise((_, no) => setTimeout(() => no(new Error('slow')), 45000));
+  Promise.race([api({ action: 'admin_queue' }), late]).then(q => {
+    const n = (q.batches || []).reduce((s, b) => s + (b.items || []).length, 0);
+    const a = $('#ownerBar a');
+    a.innerHTML = 'Approvals' + (n ? ` <span class="qbadge">${n} waiting</span>` : '');
+    a.title = n ? `${n} waiting for you to approve` : 'Nothing waiting';
+  }).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkWaiting(); });
 
 function offerResume() {
   let d = null; try { d = JSON.parse(store.get('roots_draft') || 'null'); } catch (e) {}
