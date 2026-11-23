@@ -23,7 +23,7 @@ function syncLevelBtn() {
   const b = $('#btnAll'); if (!b) return;
   b.setAttribute('aria-pressed', STATE.level > 0);
   b.setAttribute('aria-label', 'Show: ' + LEVELS[STATE.level] + '. Choose how much of the family to show');
-  const l = b.querySelector('.lbl'); if (l) l.textContent = LEVELS[STATE.level];
+  const l = b.querySelector('.lbl'); if (l) l.textContent = 'Show: ' + LEVELS[STATE.level];
 }
 function setLevel(lv) {
   STATE.level = lv;

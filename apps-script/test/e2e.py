@@ -111,8 +111,8 @@ async def main():
         check('adding yourself next to a relative', 'Add yourself' in await rp.inner_text('#panel h2'))
         await rp.locator('#fRel button[data-v="sibling"]').click()
         await rp.fill('#fFirst', 'Kate'); await rp.fill('#fLast', 'Ruzicka')
-        check('relative is asked for their name', await rp.is_visible('#fWho'))
-        await rp.fill('#fWho', 'Kate, Jonny\'s sister')
+        # 2026-11-22: on your own form your name is the sender, so it isn't asked a second time.
+        check('adding yourself doesn\'t ask who sent it', not await rp.is_visible('#fWho'))
         await rp.click('#pSave'); await rp.wait_for_timeout(1600)
         check('relative thank-you mentions approval', 'Jonny Ruzicka looks over' in await rp.inner_text('#thanksBody'))
         await rp.click('#thanksBack'); await rp.wait_for_timeout(2200)
@@ -160,7 +160,7 @@ async def main():
         # ---------- owner approves ----------
         await op.click('#tabQueue'); await op.wait_for_timeout(900)
         qtext = await op.inner_text('#queue')
-        check('queue shows who sent it', "Kate, Jonny's sister" in qtext, qtext[:200])
+        check('queue shows who sent it', "Kate Ruzicka" in qtext, qtext[:200])
         check('queue shows the correction as before and after', 'Birthplace' in qtext and 'Cleveland, Ohio' in qtext)
         await op.screenshot(path=OUT + '03_queue.png', full_page=True)
         while await op.locator('[data-all="approve"]').count():
@@ -399,8 +399,10 @@ async def main():
         await rp.reload(); await wait_api(rp)
         check('relatives see the pause notice', await rp.is_visible('#paused'))
         await rp.locator('.card.focus').click(); await rp.wait_for_timeout(300); await rp.click('#pAdd'); await rp.wait_for_timeout(300)
-        await rp.fill('#fFirst', 'Paused'); await rp.click('#pSave'); await rp.wait_for_timeout(1000)
-        check('adding while paused gets a clear message', 'paused' in (await rp.inner_text('#formErr')).lower())
+        await rp.fill('#fFirst', 'Paused')
+        if await rp.is_visible('#fOther'): await rp.select_option('#fOther', '')   # two partners: no default other parent since 2026-11-22
+        await rp.click('#pSave'); await rp.wait_for_timeout(1000)
+        _e = await rp.inner_text('#formErr'); check('adding while paused gets a clear message', 'paused' in _e.lower(), _e)
         await op.click('#btnPause'); await op.wait_for_timeout(500)
 
         print('\nERRORS', errs)

@@ -1178,9 +1178,9 @@ function openPerson(id) {
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <div class="body">${body}</div>
     <div class="foot">
-      ${isFocus ? '' : `<button class="primary" id="pCenter">${STATE.view === 'wheel' ? `Put ${esc(p.placeholder ? 'them' : p.first)} in the middle` : `Center the tree on ${esc(p.placeholder ? 'them' : p.first)}`}</button>`}
-      <button class="iconbtn" id="pAdd">Add a relative</button>
+      <button class="primary" id="pAdd">Add a relative</button>
       <button class="iconbtn" id="pEdit">${p.placeholder ? 'Fill in' : 'Edit'}</button>
+      ${isFocus ? '' : `<button class="iconbtn" id="pCenter">${STATE.view === 'wheel' ? `Put ${esc(p.placeholder ? 'them' : p.first)} in the middle` : `Center on ${esc(p.placeholder ? 'them' : p.first)}`}</button>`}
       ${p.pending ? '<button class="iconbtn" id="pTakeBack">Take back</button>' : ''}
       ${canClaim ? '<button class="iconbtn" id="pMe">This is me</button>' : ''}
     </div>`);
@@ -1224,8 +1224,8 @@ function whoField() {
   if (STATE.viewer || ADMIN_KEY) return '';
   return `<div class="field"><label for="fWho">Your name, so ${OWNER_NAME} knows who sent this</label><input id="fWho" value="${esc(myName())}" autocomplete="name" placeholder="For example: Linda, Carol's cousin"></div>`;
 }
-function livingSeg(v) {
-  return `<div class="field"><span class="lab">Are they living? ${infoBtn(INFO.living)}</span><div class="seg" id="fLiving">
+function livingSeg(v, hide) {
+  return `<div class="field"${hide ? ' hidden' : ''}><span class="lab">Are they living? ${infoBtn(INFO.living)}</span><div class="seg" id="fLiving">
     <button type="button" data-v="living" aria-pressed="${v === 'living'}">Living</button><button type="button" data-v="deceased" aria-pressed="${v === 'deceased'}">Passed away</button><button type="button" data-v="unknown" aria-pressed="${v === 'unknown'}">Not sure</button></div></div>`;
 }
 /* Names are stored as birth_surname plus a list of later last names, oldest first; the last one is the name they go by now.
@@ -1295,13 +1295,16 @@ function addNameRow(v = '', focus = true) {
 function fieldsHTML(p, livingV, opts = {}) {
   const nm = namesFromPerson(p);
   const showMore = !!(nm.birthName || nm.otherNames.length);
-  const noName = (!opts.edit || opts.noName) && !p.placeholder, unk = noName && isNoName(p);
+  // opts.self: the form is about the person filling it in (2026-11-22): they're living, they know their own name,
+  // and their own name says who sent it, so those questions go.
+  const self = !!opts.self;
+  const noName = !self && (!opts.edit || opts.noName) && !p.placeholder, unk = noName && isNoName(p);
   return `
     <div id="fPersonFields">
     <div id="fNameBlock"${unk ? ' hidden' : ''}>
     <div class="row2"><div class="field"><label for="fFirst">First name</label><input id="fFirst" value="${esc(p.first || '')}" autocomplete="off"><div class="dups" id="dups"></div></div>
       <div class="field"><label for="fMiddle">Middle name</label><input id="fMiddle" value="${esc(p.middle || '')}" autocomplete="off"></div></div>
-    <div class="row2"><div class="field"><label for="fLast">Last name now</label><input id="fLast" value="${esc(nm.last)}" autocomplete="off" placeholder="Or their last one"></div>
+    <div class="row2"><div class="field"><label for="fLast">Last name now</label><input id="fLast" value="${esc(nm.last)}" autocomplete="off" placeholder="${self ? '' : 'Or their last one'}"></div>
       <div class="field"><label for="fNick">Nickname</label><input id="fNick" value="${esc(p.nicknames || '')}" autocomplete="off" placeholder="Bobby, Dee"></div></div>
     <p class="hint warn" id="fNickWarn" hidden>Nickname is what everyone calls them, and it shows on their card. The tree works out Mom, Grandma or Uncle by itself, so leave that part out.</p>
     <button type="button" class="morelink" id="fNamesBtn"${showMore ? ' hidden' : ''}>+ Maiden name or earlier last names</button>
@@ -1316,16 +1319,20 @@ function fieldsHTML(p, livingV, opts = {}) {
     <p class="hint" id="fNoNameHint"${unk ? '' : ' hidden'}>They'll show as Unknown. Add what you do know below, and anyone who knows the name can fill it in later.</p>` : ''}
     <div class="field"><label for="fSex">Gender</label><select id="fSex">${[['', 'Not sure, or rather not say'], ['female', 'Female'], ['male', 'Male'], ['other', 'Other']].map(([v, t]) => `<option value="${v}"${(p.sex || '') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
       <p class="hint">Lets the tree say mother or grandson instead of parent or grandchild. Private while they're living${opts.edit && isLiving(p) && !p.pending ? ', so it shows blank here even if someone already chose one' : ''}.</p></div>
-    ${livingSeg(livingV)}
-    <div class="row2"><div class="field"><label for="fBorn">Born</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1932, about 1932, May 14, 1932"></div>
+    ${livingSeg(self ? 'living' : livingV, self)}
+    ${self ? `<div class="field"><label for="fBorn">When were you born?</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1952, or May 14, 1952"></div>
+    <div class="field"><label for="fPlace">Where were you born?</label><input id="fPlace" value="${esc(p.bornPlace || '')}" placeholder="&quot;Cleveland&quot; or &quot;somewhere in Ohio&quot; is fine"></div>
+    <div class="field"><label for="fNotes">Anything you'd like ${OWNER_NAME} to know</label><textarea id="fNotes" placeholder="Who your parents are, where you grew up">${esc(p.notes || '')}</textarea></div>`
+    : `<div class="row2"><div class="field"><label for="fBorn">Born</label><input id="fBorn" value="${esc(fuzzyToText(p.bornRaw))}" placeholder="1932, about 1932, May 14, 1932"></div>
       <div class="field"><label for="fDied">Died</label><input id="fDied" value="${esc(fuzzyToText(p.diedRaw))}" placeholder="Year or date"></div></div>
     <div class="field"><label for="fPlace">Where were they born?</label><input id="fPlace" value="${esc(p.bornPlace || '')}" placeholder="&quot;Cleveland&quot; or &quot;somewhere in Ohio&quot; is fine"></div>
-    <div class="field"><label for="fNotes">Anything you remember</label><textarea id="fNotes" placeholder="A job, a habit, a story they told">${esc(p.notes || '')}</textarea></div>
+    <div class="field"><label for="fNotes">Anything you remember</label><textarea id="fNotes" placeholder="A job, a habit, a story they told">${esc(p.notes || '')}</textarea></div>`}
     </div>
-    <div class="field"><label for="fSource">Information source</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(opts.edit ? '' : (p.source || ''))}"></div>
-    ${whoField()}
+    ${self ? '' : `<div class="field"><label for="fSource">Information source</label><input id="fSource" placeholder="Family Bible, Grandma told me, a gravestone" value="${esc(opts.edit ? '' : (p.source || ''))}"></div>
+    ${whoField()}`}
     <p class="formerr" id="formErr" role="alert" hidden></p>
-    <p class="hint" id="fNameHint">Only a name is needed, and "I don't know their name" works too. For living people, only names show (first, middle, nickname, last now); everything else stays private.</p>`;
+    <p class="hint" id="fNameHint">${self ? 'Only your first name is needed. While you\'re living, only your names show on the tree; your birthday, birthplace and notes stay private.'
+      : 'Only a name is needed, and "I don\'t know their name" works too. For living people, only names show (first, middle, nickname, last now); everything else stays private.'}</p>`;
 }
 const isNoName = q => !q.placeholder && sameName(q.first, 'Unknown') && !q.middle && !q.last && !q.nicknames;
 // "Mom", "great Grandma", "Uncle Rob": what the person typing calls them, not a nickname. A gentle note, never a block.
@@ -1417,12 +1424,57 @@ async function submit(items, f) {
 }
 function batchThanks() {
   if (!sessionAdded.length) return;
-  const n = sessionAdded.length, first = sessionAdded[0];
+  lastReview = sessionAdded;
   sessionAdded = [];
-  const live = !!ADMIN_KEY;
-  showThanks(n > 1 ? `Thank you. ${n} people planted.` : `Thank you. ${esc(first)} is planted.`,
-    live ? 'Owner mode: it went live right away.'
-      : `${OWNER_NAME} looks over every addition before everyone sees it. Until then ${n > 1 ? 'they show' : first + ' shows'} on your tree, marked unconfirmed.`);
+  showReview();
+}
+/* Review after saving (Jonny, 2026-11-22): what they just sent, laid out to read rather than in form boxes, with Edit
+   to go back and change it. Built from what they typed, so it shows before the tree has reloaded. Editing an unconfirmed
+   person rewrites what they sent, then comes back here. */
+let lastReview = [];
+function reviewFacts(e) {
+  const f = e.f || {}, rows = [];
+  const name = [f.first, f.middle, f.last].filter(Boolean).join(' ') + (f.nick ? ` "${f.nick}"` : '');
+  if (f.birthName && !sameName(f.birthName, f.last)) rows.push(['Last name at birth', f.birthName]);
+  if ((f.otherNames || []).length) rows.push(['Other last names', f.otherNames.join(', ')]);
+  if (e.line) rows.push([e.self ? 'Where you fit' : 'Where they fit', e.line]);
+  const sexW = { female: 'Female', male: 'Male', other: 'Other' }[f.sex];
+  if (sexW) rows.push(['Gender', sexW]);
+  if (!e.self) rows.push(['Living?', { living: 'Living', deceased: 'Passed away' }[f.died ? 'deceased' : f.living] || 'Not sure']);
+  if (f.born) rows.push(['Born', f.born + (f.bornPlace ? ', ' + f.bornPlace : '')]);
+  else if (f.bornPlace) rows.push(['Born in', f.bornPlace]);
+  if (f.died) rows.push(['Died', f.died]);
+  // "How I'm related" was asked on its own and already shows as Where you fit.
+  const notes = e.said && (f.notes || '').startsWith(e.said) ? f.notes.slice(e.said.length).trim() : f.notes;
+  if (notes) rows.push([e.self ? 'Your note' : 'What you remember', notes]);
+  if (f.source) rows.push(['Where you learned it', f.source]);
+  return { name: f.noName ? 'Unknown (no name yet)' : name || e.name, rows };
+}
+function showReview() {
+  const list = lastReview, n = list.length, people = list.filter(e => !e.linkOnly);
+  const first = list[0] || {};
+  const firstName = first.self ? 'You' : first.name;
+  $('#thanksTitle').innerHTML = n > 1 ? `Thank you. ${n} ${people.length === n ? 'people' : 'additions'} planted.`
+    : first.self ? "Thank you. You're on the tree." : `Thank you. ${esc(firstName)} is planted.`;
+  $('#thanksBody').textContent = ADMIN_KEY ? 'Owner mode: it went live right away.'
+    : `${OWNER_NAME} looks over every addition before everyone sees it. Until then ${n > 1 ? 'they show' : first.self ? 'you show' : esc(firstName) + ' shows'} on your tree, marked unconfirmed.`;
+  const box = $('#thanksReview');
+  box.innerHTML = `<h2>Here's what you sent</h2>` + list.map((e, i) => {
+    if (e.linkOnly) return `<div class="rvcard"><p class="rvlink">${esc(e.line)}</p></div>`;
+    const r = reviewFacts(e);
+    return `<div class="rvcard"><div class="rvhead"><b>${esc(r.name)}</b>${e.id ? `<button class="iconbtn" data-rv="${i}">Edit</button>` : ''}</div>
+      ${r.rows.length ? `<dl>${r.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}</div>`;
+  }).join('') + `<p class="hint">Something wrong, or remember more? Tap Edit. ${ADMIN_KEY ? '' : `You can change it until ${OWNER_NAME} confirms it.`}</p>`;
+  box.hidden = !n;
+  box.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => reviewEdit(list[+b.dataset.rv]));
+  showPage('thanks');
+  $('#thanks').scrollTop = 0;
+}
+async function reviewEdit(e) {
+  hidePage('thanks');
+  if (pendingReload || !G.people.has(e.id)) { pendingReload = false; await reload(); }
+  if (!G.people.has(e.id)) { toast("Couldn't find it on the tree yet. Try again in a moment."); return; }
+  openEdit(e.id, null, e);
 }
 
 /* Duplicate check: as a name is typed, offer people already in the tree. */
@@ -1441,7 +1493,7 @@ function wireDupCheck(onPick) {
   first.addEventListener('input', check); if (last) last.addEventListener('input', check);
 }
 
-function openEdit(id, restore) {
+function openEdit(id, restore, fromReview) {
   const p = P(id);
   // Their own unconfirmed person: the fix rewrites what they sent. A confirmed person: changes are compared with what
   // Jonny confirmed (p.base), and any changes they sent earlier are replaced, not stacked.
@@ -1454,16 +1506,21 @@ function openEdit(id, restore) {
   openPanel(`
     <div class="head"><div><h2>${b.placeholder ? 'Who was this?' : 'Edit ' + esc(p.first)}</h2><div class="sub">${sub}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
-    <form class="body form" id="editForm" novalidate>${fieldsHTML(p, lvNow, { edit: !own, noName: own || isNoName(p) })}${own ? '' : parentKindsHTML(id) + partnerKindsHTML(id)}</form>
+    <form class="body form" id="editForm" novalidate>${fieldsHTML(p, lvNow, { edit: !own, noName: own || isNoName(p), self: id === STATE.viewer && isLiving(p) })}${own ? '' : parentKindsHTML(id) + partnerKindsHTML(id)}</form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button><button class="primary" id="pSave">Save</button></div>`);
   wireCommon();
   if (restore) fillForm(restore.fields);
   watchForm('edit', id);
   if (restore) formDirty = true;
-  $('#pClose').onclick = () => guardClose(); $('#pBack').onclick = () => guardClose(() => openPerson(id));
+  $('#pClose').onclick = () => guardClose(); $('#pBack').onclick = () => guardClose(() => fromReview ? (closePanel(), showReview()) : openPerson(id));
   $('#editForm').onsubmit = e => { e.preventDefault(); currentSave(); };
   const done = f => {
     busy(false); clearDraft(); closePanel();
+    if (fromReview && own) {
+      // Back to "Here's what you sent", with the new version. The tree reloads when they leave it.
+      fromReview.f = { ...f, notes: f.notes }; fromReview.name = f.first || f.last || fromReview.name;
+      pendingReload = true; showReview(); return;
+    }
     const who = f.first || p.first || 'it';
     showThanks(own ? `Fixed. ${esc(who === 'Unknown' ? 'Your entry' : who)} is updated.` : `Thank you. Your changes to ${esc(who)} are saved.`,
       ADMIN_KEY ? 'Owner mode: they went live right away.'
@@ -1521,7 +1578,7 @@ function openEdit(id, restore) {
 /* opts: { rel, fields, self } ; anchor may be null when the tree is empty (adding yourself first). */
 function openAdd(id, opts = {}) {
   const p = id ? P(id) : null;
-  const self = !!opts.self;
+  const self = !!opts.self, loose = self && !p && !!opts.loose;
   const rel = opts.rel || (self ? 'child' : 'child');
   const done = sessionAdded.length;
   const relWord = p ? (self ? 'You are ' : 'They are ') + esc(p.first || 'this person') + "'s" : '';
@@ -1530,11 +1587,13 @@ function openAdd(id, opts = {}) {
   const stepParents = p ? [...new Set(parents.flatMap(pp => partnersOf(pp).map(x => x.id)))].filter(sp => !parents.includes(sp) && !P(sp).placeholder) : [];
   openPanel(`
     <div class="head"><div><h2>${self ? 'Add yourself' : `Add someone to ${esc(p.placeholder ? 'this branch' : p.first + "'s branch")}`}</h2>
-      <div class="sub">${done ? `${done} saved so far. Keep going, or tap Save on the last one.` : self ? 'Start with your name. You can add more later.' : 'Add who you know, including relatives who have died.'}</div></div>
+      <div class="sub">${done ? `${done} saved so far. Keep going, or tap Save on the last one.` : loose ? `Start with your name, then tell ${OWNER_NAME} how you're related. He'll put you in the right place.` : self ? 'Start with your name. You can add more later.' : 'Add who you know, including relatives who have died.'}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
     <form class="body form" id="addForm" novalidate>
       ${p ? `<div class="field"><span class="lab">${relWord}</span><div class="seg" id="fRel">
-        ${['parent', 'partner', 'sibling', 'child'].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
+        ${['parent', 'partner', 'sibling', 'child', ...(self ? ['other'] : [])].map(v => `<button type="button" data-v="${v}" aria-pressed="${v === rel}">${v === 'other' ? 'Something else' : v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
+      ${self ? `<div class="field" id="fHowWrap" hidden><label for="fHow">What are you to ${esc(p.first || 'them')}?</label><input id="fHow" autocomplete="off" placeholder="Niece, cousin, grandson, son-in-law">
+        <p class="hint">${OWNER_NAME} will connect you in the right spot when he confirms it.</p></div>` : ''}
       <div class="field" id="fSibWrap" hidden><span class="lab">What kind of sibling? ${infoBtn(INFO.sibling)}</span><div class="seg" id="fSib"><button type="button" data-v="full" aria-pressed="true">Full</button><button type="button" data-v="half" aria-pressed="false">Half</button><button type="button" data-v="step" aria-pressed="false">Step</button></div></div>
       <div class="field" id="fSibParWrap" hidden><label for="fSibPar" id="fSibParLab">Which parent do you share?</label><select id="fSibPar"></select><p class="hint" id="fSibHint" hidden></p></div>
       <div class="field" id="fPcWrap" hidden><span class="lab"><span id="fPcLab">What kind of parent?</span> ${infoBtn(INFO.parent)}</span><div class="seg" id="fPc">${PC_KINDS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === 'biological'}">${l}</button>`).join('')}</div>
@@ -1544,8 +1603,9 @@ function openAdd(id, opts = {}) {
       <div class="field" id="fKidsWrap" hidden><span class="lab" id="fKidsLab">Are they also the parent of…</span><div class="kids" id="fKids"></div></div>
       ${self ? '' : `<div class="field"><span class="lab">Who are they? ${infoBtn(INFO.which)}</span><div class="seg" id="fWhich"><button type="button" data-v="new" aria-pressed="true">Someone new</button><button type="button" data-v="existing" aria-pressed="false">Already in the tree</button></div></div>
       <div id="fPickWrap" hidden><div class="field"><label for="fPickQ">Find them</label><input id="fPickQ" placeholder="Type a name, or tap one below" autocomplete="off"></div><div class="pick tall" id="fPickList"></div></div>`}
-` : ''}
-      ${fieldsHTML(self ? { last: p ? p.last : '' } : {}, self ? 'living' : 'unknown')}
+` : loose ? `<div class="field" id="fHowWrap"><label for="fHow">How are you related to the family?</label><input id="fHow" autocomplete="off" placeholder="Barbara Hale is my aunt">
+        <p class="hint">Name someone in the family and what they are to you. ${OWNER_NAME} will connect you in the right spot when he confirms it.</p></div>` : ''}
+      ${fieldsHTML({}, self ? 'living' : 'unknown', { self })}
       <input type="hidden" id="fLink" value="">
     </form>
     <div class="foot"><button class="iconbtn" id="pBack">Cancel</button>${self ? '' : '<button class="iconbtn" id="pMore">Save &amp; add another</button>'}<button class="primary" id="pSave">Save</button></div>`);
@@ -1612,6 +1672,7 @@ function openAdd(id, opts = {}) {
     if (!p) return;
     const ow = $('#fOtherWrap'), kw = $('#fKindWrap');
     ow.hidden = true; kw.hidden = v !== 'partner';
+    if ($('#fHowWrap')) $('#fHowWrap').hidden = v !== 'other';
     $('#fPcWrap').hidden = v !== 'parent' && v !== 'child';
     $('#fPcLab').textContent = v === 'child' ? `What kind of parent is ${p.first || 'this person'}?` : 'What kind of parent?';
     document.querySelectorAll('#fPc button').forEach(b => { b.classList.remove('off'); b.setAttribute('aria-disabled', 'false'); });
@@ -1619,7 +1680,12 @@ function openAdd(id, opts = {}) {
     if (v === 'child') {
       // Who else is this child's parent? Defaults to the current partner.
       const prts = partnersOf(p.id).map(x => x.id);
-      if (prts.length) { $('#fOtherLab').textContent = 'Their other parent'; $('#fOther').innerHTML = optsOf(prts, 'Someone else, or not sure'); ow.hidden = false; }
+      // With two or more partners (an ex and a current spouse) there's no safe guess, so they choose (2026-11-22).
+      if (prts.length) {
+        $('#fOtherLab').textContent = self ? 'Your other parent' : 'Their other parent';
+        $('#fOther').innerHTML = (prts.length > 1 ? '<option value="__choose" disabled selected>Choose one</option>' : '') + optsOf(prts, 'Someone else, or not sure');
+        ow.hidden = false;
+      }
     }
     syncParent();
     syncSib();
@@ -1695,38 +1761,61 @@ function openAdd(id, opts = {}) {
     if (!link && segVal('fWhich') === 'existing') throw new Error('Tap who they are in the list, or choose "Someone new".');
     const me = link || 'new:1';
     const items = [];
+    const r = p ? segVal('fRel') : '';
+    const dn = x => displayName(P(x));
+    let line = '', said = '';   // how they connect, in words, for the review after saving
+    if (self) {
+      if (!f.first) throw new Error('Type your first name.');
+      f.who = [f.first, f.last].filter(Boolean).join(' ');
+      const how = (($('#fHow') || {}).value || '').trim();
+      if (loose || r === 'other') {
+        if (!how) throw new Error(loose ? 'Say how you\'re related, for example "Barbara Hale is my aunt".' : `Say what you are to ${p.first || 'them'}, for example "niece".`);
+        // Saved in their notes (private while they're living) for Jonny to read when he places them.
+        said = loose ? `How I'm related: ${how}` : `Related to ${dn(p.id)}: ${how}`;
+        f.notes = f.notes ? said + '\n\n' + f.notes : said;
+        line = loose ? `How you're related: ${how}` : `${dn(p.id)}'s ${how}`;
+      }
+    }
     if (!link) {
       if (!f.first && !f.last && !f.noName) throw new Error('Add at least a name, or tick "I don\'t know their name".');
       items.push({ kind: 'person', ref: 'new:1', data: personData(f), source: f.source });
     }
-    if (p) {
-      const r = segVal('fRel');
+    if (p && r !== 'other') {
       if (r === 'child') {
         const k = pcSub();
         items.push({ kind: 'relationship', type: 'parent_child', a: p.id, b: me, subtype: k, source: f.source });
         const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
+        if (other === '__choose') throw new Error(`Choose ${self ? 'your' : 'their'} other parent, or "Someone else, or not sure".`);
         // A stepchild is usually their other parent's birth child; adopted or fostered children usually by both.
         if (other) items.push({ kind: 'relationship', type: 'parent_child', a: other, b: me, subtype: k === 'step' ? 'biological' : k, source: f.source });
+        line = `Child of ${dn(p.id)}${other ? ' and ' + dn(other) : ''}${k !== 'biological' ? ` (${(PC_KINDS.find(x => x[0] === k) || [, k])[1].toLowerCase()} parent)` : ''}`;
       } else if (r === 'parent') {
         const k = pcSub();
         const other = $('#fOtherWrap').hidden ? '' : $('#fOther').value;
         if (k === 'step' && other) {
           // Stored as the parent's partner; the tree works out "Stepfather" from that.
           if (other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+          line = `Step-parent of ${dn(p.id)}, through ${dn(other)}`;
         } else {
           if (full) throw new Error(k === 'step' ? 'Choose who they were married to.' : 'Two parents are already here. Choose Step and who they were married to.');
           items.push({ kind: 'relationship', type: 'parent_child', a: me, b: p.id, subtype: k, source: f.source });
           if (other && other !== me) items.push({ kind: 'relationship', type: 'partner', a: other, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+          line = `${k === 'biological' ? 'Parent' : (PC_KINDS.find(x => x[0] === k) || [, ''])[1] + ' parent'} of ${dn(p.id)}${other && other !== me ? `, with ${dn(other)}` : ''}`;
         }
       }
       else if (r === 'partner') {
-        items.push({ kind: 'relationship', type: 'partner', a: p.id, b: me, subtype: segVal('fKind') || 'married', source: f.source });
+        const kind = segVal('fKind') || 'married';
+        items.push({ kind: 'relationship', type: 'partner', a: p.id, b: me, subtype: kind, source: f.source });
         // Children of p they're also a parent of (ticked on the form).
-        document.querySelectorAll('#fKids input:checked').forEach(cb => items.push({ kind: 'relationship', type: 'parent_child', a: me, b: cb.value, source: f.source }));
+        const kids = [...document.querySelectorAll('#fKids input:checked')].map(cb => cb.value);
+        kids.forEach(c => items.push({ kind: 'relationship', type: 'parent_child', a: me, b: c, source: f.source }));
+        const with_ = { married: 'Married to', partner: 'Partners with', divorced: 'Divorced from', former: 'Former partner of', widowed: 'Was married to' }[kind] || 'Partner of';
+        line = `${with_} ${dn(p.id)}${kids.length ? `. Parent of ${andList(kids.map(dn))}` : ''}`;
       }
       else if (r === 'sibling' && segVal('fSib') === 'half') {
         const shared = $('#fSibPar').value;
         if (!shared) throw new Error('Add the parent they share first, then add the half-sibling.');
+        line = `Half-sibling of ${dn(p.id)}, through ${dn(shared)}`;
         items.push({ kind: 'relationship', type: 'parent_child', a: shared, b: me, source: f.source });
         if (parents.length < 2 && !link) {
           // With only one parent recorded, an unknown other parent keeps them a half-sibling rather than a full one.
@@ -1738,8 +1827,10 @@ function openAdd(id, opts = {}) {
         const sp = $('#fSibPar').value;
         if (!sp) throw new Error('Add the step-parent first, then add their children.');
         items.push({ kind: 'relationship', type: 'parent_child', a: sp, b: me, source: f.source });
+        line = `Step-sibling of ${dn(p.id)}, child of ${dn(sp)}`;
       }
       else if (r === 'sibling') {
+        line = `Brother or sister of ${dn(p.id)}`;
         if (parents.length) parents.forEach(pp => items.push({ kind: 'relationship', type: 'parent_child', a: pp, b: me, source: f.source }));
         else {
           // Siblings are stored as shared parents. Nobody knows them yet, so an unknown parent holds the link.
@@ -1750,7 +1841,8 @@ function openAdd(id, opts = {}) {
       }
     }
     if (self) items.push({ kind: 'claim', person: me });
-    return { items, name: link ? P(link).first : (f.first || f.last || 'Unknown') };
+    if (link) line = `${dn(link)}, already in the tree, linked as ${p.first || 'their'}'s ${r}`;
+    return { items, line, said, name: link ? P(link).first : (f.first || f.last || 'Unknown') };
   };
   const doSave = async more => {
     const f = readForm();
@@ -1761,10 +1853,16 @@ function openAdd(id, opts = {}) {
     try { res = await submit(b.items, f); }
     catch (err) { busy(false); formError(err.message); return; }
     busy(false); clearDraft();
-    sessionAdded.push(b.name);
+    const newId = (res && res.ids && res.ids['new:1']) || '';
+    sessionAdded.push({ name: b.name, id: newId, f, line: b.line, said: b.said, linkOnly: !newId, self });
     // if the new person won't be on screen from here, the next reload centers on the card they were added to
     showAfterSave = { anchor: id, ids: [...Object.values((res && res.ids) || {}), $('#fLink') && $('#fLink').value].filter(Boolean) };
-    if (self) { STATE.viewer = (res.ids && res.ids['new:1']) || $('#fLink').value || STATE.viewer; STATE.focus = STATE.viewer; }
+    if (self) {
+      STATE.viewer = (res.ids && res.ids['new:1']) || $('#fLink').value || STATE.viewer;
+      // Not linked yet ("Something else", or nobody they know): open on the relative they named, or on Jonny, so
+      // they see family instead of one card on its own.
+      STATE.focus = (b.said && (p ? p.id : STATE.owner)) || STATE.viewer;
+    }
     if (more) {
       const keepRel = segVal('fRel');
       await reload();
@@ -1796,7 +1894,7 @@ let pendingReload = false;
 let showAfterSave = null;
 function showPage(id) { $('#' + id).classList.add('on'); }
 function hidePage(id) { $('#' + id).classList.remove('on'); }
-function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; showPage('thanks'); }
+function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; $('#thanksReview').hidden = true; showPage('thanks'); }
 $('#thanksBack').onclick = () => { hidePage('thanks'); if (pendingReload) { pendingReload = false; setTimeout(() => reload(), 150); } };
 $('#thanksSend').onclick = () => { hidePage('thanks'); if (pendingReload) { pendingReload = false; reload(); } openSend(); };
 
@@ -1828,12 +1926,14 @@ $('#btnSend').onclick = openSend;
 let toastT;
 function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 3200); }
 
-function pickPerson(title, sub, onPick, filter = () => true) {
+function pickPerson(title, sub, onPick, filter = () => true, escape = null) {
   openPanel(`
     <div class="head"><div><h2>${title}</h2><div class="sub">${sub}</div></div>
       <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
-    <div class="body"><div class="field"><label for="qName">Name</label><input id="qName" placeholder="Start typing a name" autocomplete="off"></div><div class="pick" id="qList"></div></div>`);
+    <div class="body"><div class="field"><label for="qName">Name</label><input id="qName" placeholder="Start typing a name" autocomplete="off"></div><div class="pick" id="qList"></div></div>
+    ${escape ? `<div class="foot"><button class="iconbtn" id="qEscape">${esc(escape.label)}</button></div>` : ''}`);
   $('#pClose').onclick = closePanel;
+  if (escape) $('#qEscape').onclick = escape.onClick;
   const list = () => {
     const q = $('#qName').value.toLowerCase().trim();
     const hits = [...G.people.values()].filter(p => !p.placeholder && filter(p) && nameMatches(p, q)).slice(0, 40);
@@ -1873,7 +1973,7 @@ function syncLevelBtn() {
   const b = $('#btnAll'); if (!b) return;
   b.setAttribute('aria-pressed', STATE.level > 0);
   b.setAttribute('aria-label', 'Show: ' + LEVELS[STATE.level] + '. Choose how much of the family to show');
-  const l = b.querySelector('.lbl'); if (l) l.textContent = LEVELS[STATE.level];
+  const l = b.querySelector('.lbl'); if (l) l.textContent = 'Show: ' + LEVELS[STATE.level];
 }
 function setLevel(lv) {
   STATE.level = lv;
@@ -2607,10 +2707,11 @@ const INTRO = [
     <h1>How it works</h1>
     <ul class="howto">
       <li><span class="ic">${ICON.bud.replace('currentColor', '#A9822F')}</span><div><b>Tap anyone to see their story.</b><span>Names, dates and memories for those who've passed. Living relatives show by name only.</span></div></li>
-      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Branches far from the center fold into buds.</b><span>Tap a bud to open it, or use the menu at the top that starts as Close family to open more at once. A small +3 on a card means more family there: tap it to center the tree on them.</span></div></li>
-      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><b>Add who you know.</b><span>Especially the relatives we've lost. A first name is enough to start. ${OWNER_NAME} confirms each addition.</span></div></li>
-      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></span><div><b>Not sure what a line means?</b><span>Tap Key at the top for every symbol and line type.</span></div></li>
-      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><b>Add who you know.</b><span>Tap <b>Add someone</b> at the bottom of the screen, or tap a person and choose <b>Add a relative</b>. Especially the relatives we've lost. A first name is enough. ${OWNER_NAME} confirms each addition.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V10"/><path d="M12 14c-3 0-5-2-6-5"/><path d="M12 12c3 0 5-2 6-5"/></svg></span><div><b>Some branches are folded into gold buds.</b><span>Tap a bud to open it, or tap <b>Show</b> at the top to open more at once. A small +3 on a card means more family there: tap it to center the tree on them.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></span><div><b>Not sure what a line means?</b><span>Tap <b>Key</b> at the top for every symbol and line type. Pinch or use + and − at the bottom right to make the tree bigger.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Tap <b>Send</b> at the top. Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
+      <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.6v.4"/><circle cx="12" cy="17" r=".6" fill="#1D2B24"/></svg></span><div><b>Stuck?</b><span>Tap <b>Help</b> at the top to see this again, or email ${OWNER_NAME} at <a href="mailto:jonathonpr@gmail.com">jonathonpr@gmail.com</a>.</span></div></li>
     </ul>`,
   () => `
     <h1>Which one is you?</h1>
@@ -2618,7 +2719,7 @@ const INTRO = [
     <ol class="isteps"><li><b>Type your name</b> in the box. First or last name is enough.</li><li><b>Tap your name</b> in the list that appears.</li></ol>
     <div class="field"><label for="iName">Your name</label><input id="iName" placeholder="Start typing your name" autocomplete="off" autocapitalize="words"></div>
     <div class="pick" id="iList"></div>
-    <div class="iadd"><span>Not in the list?</span><button class="iconbtn" id="iAdd" type="button">Add myself</button></div>
+    <div class="iadd"><span>Not in the list?</span><button class="primary" id="iAdd" type="button">Add myself</button></div>
     <p class="hint warn" id="iGate" hidden></p>`
 ];
 let introSteps = [0, 1, 2], introStep = 0;
@@ -2627,7 +2728,7 @@ function renderIntro() {
   $('#introInner').innerHTML = INTRO[step]() + `
     <div class="actions">
       ${introStep > 0 ? '<button class="iconbtn" id="iBack">Back</button>' : ''}
-      <button class="primary" id="iNext">${last ? (step === 2 ? 'Skip for now' : 'Start exploring') : step === 0 ? 'Show me how it works' : 'Next'}</button>
+      <button class="${last && step === 2 ? 'iconbtn' : 'primary'}" id="iNext">${last ? (step === 2 ? 'Skip for now' : 'Start exploring') : step === 0 ? 'Show me how it works' : 'Next'}</button>
       <span style="flex:1"></span><div class="dots">${introSteps.map((_, i) => `<i class="${i === introStep ? 'on' : ''}"></i>`).join('')}</div>
     </div>`;
   $('#intro').scrollTop = 0;
@@ -2679,7 +2780,19 @@ function finishIntro(quiet) {
    adding themselves and never finished saving, gets this standing offer until the device has a saved person.
    "Not now" hides it until the next visit. Never in owner mode. */
 var meBarOff = false;
+/* Phones show a short word under each top-bar icon (2026-11-22): the Guide told people to tap Key and Show, and phones
+   hid those words. */
+[['btnViewTree', 'Tree'], ['btnViewWheel', 'Wheel'], ['btnSearch', 'Find'], ['btnAll', 'Show'], ['btnKey', 'Key'], ['btnHelp', 'Help'], ['btnSend', 'Send']]
+  .forEach(([id, t]) => { const b = $('#' + id); if (b) b.insertAdjacentHTML('beforeend', `<span class="plbl" aria-hidden="true">${t}</span>`); });
+/* Add someone (2026-11-22): adding was only reachable by tapping a card first, which the Guide never said. */
+document.body.insertAdjacentHTML('beforeend', `<button class="primary addfab" id="btnAddSomeone" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add someone</button>`);
+$('#btnAddSomeone').onclick = () => pickPerson('Who are you adding them to?', "Find someone already on the tree they're related to. Next you'll say how, and type their name.", id => openAdd(id));
+document.body.insertAdjacentHTML('beforeend', `<div class="banner waiting" id="waitBar" hidden>You're saved. ${OWNER_NAME} will connect you to the family when he confirms it.</div>`);
 function updateMeBar() {
+  $('#btnAddSomeone').hidden = !G.people.size || !$('#paused').hidden;
+  // Added themselves with "Something else" or "I don't see anyone I know": no links yet, so say why they stand alone.
+  const v = STATE.viewer && G.people.has(STATE.viewer) ? STATE.viewer : null;
+  $('#waitBar').hidden = !v || !!ADMIN_KEY || parentsOf(v).length + childrenOf(v).length + partnersOf(v).length > 0;
   $('#meBar').hidden = meBarOff || !!ADMIN_KEY || !!STATE.viewer || !G.people.size || QS.has('nointro')
     || !$('#paused').hidden || store.get('roots_intro_seen') !== '1' || $('#intro').classList.contains('on');
 }
@@ -2688,11 +2801,19 @@ $('#meNo').onclick = () => { meBarOff = true; updateMeBar(); };
 // typed: the name searched on "Which one is you?", carried into the form so they don't type it twice.
 function addMeFlow(typed = '') {
   const w = typed.trim().split(/\s+/).filter(Boolean).map(x => x[0].toUpperCase() + x.slice(1));
-  // Only a full name is carried over: one word could be a first or a last name.
-  const fields = w.length > 1 ? { first: w[0], last: w[w.length - 1], living: 'living' } : null;
-  const go = id => openAdd(id, fields ? { self: true, rel: 'child', fields } : { self: true, rel: 'child' });
+  // A full name fills first and last. One word goes to Last name when it's a family name already in the tree
+  // ("Isaacs"), otherwise to First name (2026-11-22: "Linda" was typed twice and then asked for again).
+  const lasts = new Set([...G.people.values()].flatMap(p => [p.last, p.birthSurname, ...(p.married || [])]).filter(Boolean).map(x => x.toLowerCase()));
+  const fields = w.length > 1 ? { first: w[0], last: w[w.length - 1], living: 'living' }
+    : w.length === 1 ? (lasts.has(w[0].toLowerCase()) ? { last: w[0], living: 'living' } : { first: w[0], living: 'living' }) : null;
+  const go = (id, extra = {}) => openAdd(id, { self: true, rel: 'child', ...(fields ? { fields } : {}), ...extra });
   if (!G.people.size) { go(null); return; }
-  pickPerson("Who's your closest relative here?", "Pick a parent, sibling, partner or child who's already in the tree. You'll add yourself next to them.", go);
+  // Option A (Jonny, 2026-11-22): a cousin or in-law with no parent, sibling, partner or child here can still pick
+  // anyone, or nobody, and say how they're related. Jonny places them when he approves.
+  pickPerson("Who's a close relative of yours here?",
+    "Pick the closest one you can find. A parent, brother or sister, partner or child is best, but anyone you're related to works.",
+    id => go(id), undefined,
+    { label: "I don't see anyone I know", onClick: () => go(null, { loose: true }) });
 }
 $('#btnHelp').onclick = () => openIntro(1);
 $('#btnWhy').onclick = () => openIntro(0);
@@ -2766,7 +2887,8 @@ function showLoadError(msg) {
 $('#btnHome').onclick = () => { closePanel(); STATE.focus = STATE.viewer || STATE.owner || STATE.focus; render(); };
 
 (function boot() {
-  cam.ts = cam.s = innerWidth < 640 ? .48 : .8;
+  // Phones start closer in (2026-11-22): at .48 names were about 7 px tall. Pinch or the zoom buttons go further out.
+  cam.ts = cam.s = innerWidth < 640 ? .74 : .8;
   if (ADMIN_KEY) $('#ownerBar').hidden = false;
   // Show the last tree this device saw right away, then refresh from the server.
   let cached = null; try { cached = JSON.parse(store.get('roots_cache') || 'null'); } catch (e) {}
@@ -2802,7 +2924,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '3b903fa193';
+  const BUILD = 'b0ec029165';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

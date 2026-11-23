@@ -208,3 +208,48 @@ body.wheelmode .levelmenu { display: none; }
 .iadd { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; color: var(--ink-soft); font-size: 14px; }
 .iadd .iconbtn { width: auto; padding: 0 16px; }
 #iList .hint { margin: 4px 2px; }
+
+/* Review after saving (2026-11-22). The page scrolls from the top when it's taller than the screen. */
+#thanks { place-items: start center; }
+#thanks .inner { margin-block: auto; }
+.review { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 12px; }
+.review[hidden] { display: none; }
+.review h2 { margin: 6px 0 0; font-size: 15px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.rvcard { background: #FFFDF9; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.rvhead { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.rvhead b { font-size: 19px; font-weight: 500; }
+.rvhead .iconbtn { flex: none; width: auto; padding: 0 18px; font-size: 15px; }
+.rvcard dl { display: grid; grid-template-columns: minmax(96px, 34%) 1fr; gap: 8px 12px; margin: 12px 0 0; font-size: 16px; line-height: 1.4; }
+.rvcard dt { color: var(--ink-soft); font-size: 14.5px; }
+.rvcard dd { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+.rvlink { margin: 0; font-size: 16px; }
+.review .hint { font-size: 15px; }
+
+/* Older eyes and phones (2026-11-22). Text boxes at 16 px so iPhones don't zoom the page when one is tapped. */
+.field input, .field textarea, .field select, .panel select, .linkrow input { font-size: 16px; }
+.field label, .field .lab { font-size: 14px; }
+.hint { font-size: 14px; }
+.howto span { font-size: 15px; }
+.plbl { display: none; }
+@media (max-width: 640px) {
+  /* A word under every top-bar icon. */
+  .topbar { height: 64px; gap: 4px; padding: 0 6px; justify-content: center; }
+  .topbar .logo, .topbar .spacer { display: none; }
+  .topbar .iconbtn, .topbar .primary, .topbar .viewsw button { flex-direction: column; justify-content: center; gap: 2px; height: 52px; width: 46px; min-width: 0; padding: 0; border-radius: 14px; }
+  .topbar .viewsw { padding: 2px; border-radius: 16px; }
+  .topbar .viewsw button { height: 48px; width: 44px; border-radius: 13px; }
+  .plbl { display: block; font-size: 11.5px; line-height: 1; font-weight: 500; }
+  #btnSend > span:not(.plbl) { display: none; }
+  /* Labels everywhere else stay visible. */
+  .page .iconbtn, #thanksSend { width: auto; padding: 0 16px; }
+  .page .iconbtn .lbl { display: inline; }
+}
+/* Add someone, always on screen, above "Built by". */
+.addfab { position: fixed; left: 16px; bottom: 48px; z-index: 15; height: 48px; padding: 0 20px; font-size: 16px; box-shadow: 0 8px 22px rgba(23, 36, 30, .22); }
+.addfab[hidden] { display: none; }
+@media (max-width: 640px) { .addfab { left: 12px; bottom: 44px; } }
+.banner.waiting { background: #FFF6E0; border: 1px solid rgba(169, 130, 47, .5); color: var(--ink); font-size: 14px; white-space: normal; text-align: center; max-width: min(460px, calc(100% - 24px)); }
+/* Messages sit above the form buttons and Add someone on phones, not on top of them. */
+@media (max-width: 640px) { .toast { bottom: 100px; max-width: calc(100% - 32px); } }
+.howto span b { display: inline; font-weight: 600; color: var(--ink); }
+.howto a { color: var(--ink); text-decoration-color: var(--gilt); text-underline-offset: 3px; }

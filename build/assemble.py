@@ -29,6 +29,13 @@ body = rep(body, '<div class="scrim" id="scrim"></div>', '''<div class="state" i
 <div class="mebar" id="meBar" hidden><span>Are you on the tree?</span><button class="primary" id="meYes">Find me or add me</button><button class="iconbtn" id="meNo">Not now</button></div>
 
 <div class="scrim" id="scrim"></div>''')
+# Review after saving (2026-11-22): what was just sent, laid out to read, with Edit. Sits above the buttons.
+body = rep(body, '''    <div class="actions" style="justify-content:center">
+      <button class="primary" id="thanksBack">''', '''    <div class="review" id="thanksReview" hidden></div>
+    <div class="actions" style="justify-content:center">
+      <button class="primary" id="thanksBack">''')
+# Guide is called Help (2026-11-22): the word older relatives look for.
+body = rep(body, '<span class="lbl">Guide</span>', '<span class="lbl">Help</span>')
 # "Show all" became a menu of four levels (2026-11-22, see build/app-levels.js); the label shows the current one.
 body = rep(body, 'aria-label="Show all branches"', 'aria-label="Choose how much of the family to show"')
 body = rep(body, '<span class="lbl">Show all</span>', '<span class="lbl">Close family</span><svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>')

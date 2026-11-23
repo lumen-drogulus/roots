@@ -49,7 +49,7 @@ async def main():
         await pg.fill('#iName', 'Jonn'); await pg.wait_for_timeout(200)
         check('typing again resets the question', not await pg.is_visible('#iGate') and (await pg.inner_text('#iAdd')).strip() == 'Add myself')
         await pg.click('#iAdd'); await pg.wait_for_timeout(300); await pg.click('#iAdd'); await pg.wait_for_timeout(400)
-        check('second tap goes on to the closest-relative picker', 'closest relative' in await pg.inner_text('#panel'))
+        check('second tap goes on to the closest-relative picker', 'close relative' in await pg.inner_text('#panel'))
         await pg.click('#pClose'); await pg.wait_for_timeout(400)
         check('backed out of the picker: offer shows', await bar(pg))
         await pg.screenshot(path=OUT+'phone.png')
