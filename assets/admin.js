@@ -429,32 +429,58 @@ async function showTracker(which) {
 function renderTracker(which) { ({ visits: renderVisits, activity: renderActivity, contacts: renderContacts })[which]($('#' + which)); }
 
 /* ---------- Visits ---------- */
-let visitShow = 40;
+// Every visit is kept for good; the range only picks what the page counts and draws (Jonny asked, 2026-11-24).
+const RANGES = [[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, 'Year'], [0, 'All time']];
+let visitShow = 40, visitRange = +(store.get('roots_visit_range') || 30);
+const startOfDay = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d; };
+// Bars: one per day up to a month, one per week up to four months, one per month past that.
+function visitBuckets(fromT, now) {
+  const spanDays = Math.round((startOfDay(now) - startOfDay(fromT)) / 864e5) + 1;
+  const unit = spanDays <= 31 ? 'day' : spanDays <= 120 ? 'week' : 'month';
+  const keyOf = t => {
+    const d = startOfDay(t);
+    if (unit === 'week') d.setDate(d.getDate() - d.getDay());
+    if (unit === 'month') d.setDate(1);
+    return dayKey(d);
+  };
+  const keys = []; const d = new Date(keyOf(fromT) + 'T00:00:00'); const last = keyOf(now);
+  while (dayKey(d) <= last) { keys.push(dayKey(d)); if (unit === 'day') d.setDate(d.getDate() + 1); else if (unit === 'week') d.setDate(d.getDate() + 7); else d.setMonth(d.getMonth() + 1); }
+  const label = k => { const [y, m, dd] = k.split('-').map(Number); const x = new Date(y, m - 1, dd);
+    return unit === 'day' ? dayLabel(k) : unit === 'week' ? 'Week of ' + x.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : x.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }); };
+  return { unit, keys, keyOf, label };
+}
 function renderVisits(el) {
-  const V = TRK.visits, now = Date.now(), d30 = now - 30 * 864e5;
-  const recent = V.filter(v => new Date(v.at) >= d30);
+  const all = TRK.visits, now = Date.now();
+  const fromT = visitRange ? startOfDay(now - (visitRange - 1) * 864e5).getTime() : (all.length ? new Date(all[0].at).getTime() : now);
+  const V = all.filter(v => new Date(v.at) >= fromT);
+  const rangeWord = visitRange ? `in the last ${RANGES.find(r => r[0] === visitRange)[1].toLowerCase().replace('year', '12 months')}` : 'since the tracker started';
+  const recent = V;
   const today = dayKey(now);
   const devs = new Set(recent.map(v => v.device));
   const newDevs = new Set(recent.filter(v => v.first).map(v => v.device));
   const tiles = [
-    [recent.length, 'visits', 'in the last 30 days'],
-    [devs.size, devs.size === 1 ? 'device' : 'devices', 'phones and computers, last 30 days'],
+    [recent.length, recent.length === 1 ? 'visit' : 'visits', rangeWord],
+    [devs.size, devs.size === 1 ? 'device' : 'devices', 'phones and computers, ' + rangeWord.replace(/^in the /, '')],
     [newDevs.size, 'first-timers', 'opened the tree for the first time'],
-    [V.filter(v => dayKey(v.at) === today).length, 'today', 'visits so far today']
+    [all.filter(v => dayKey(v.at) === today).length, 'today', 'visits so far today']
   ];
-  // Visits per day, last 30 days: one series, so one color and no legend; the heading names it.
-  const days = []; for (let i = 29; i >= 0; i--) days.push(dayKey(now - i * 864e5));
-  const perDay = new Map(days.map(k => [k, 0]));
-  recent.forEach(v => { const k = dayKey(v.at); if (perDay.has(k)) perDay.set(k, perDay.get(k) + 1); });
+  // One series, so one color and no legend; the heading names it.
+  const B = visitBuckets(fromT, now);
+  const perDay = new Map(B.keys.map(k => [k, 0]));
+  recent.forEach(v => { const k = B.keyOf(v.at); if (perDay.has(k)) perDay.set(k, perDay.get(k) + 1); });
   const max = Math.max(1, ...perDay.values());
   const top = max <= 4 ? max : Math.ceil(max / 5) * 5;
+  const days = B.keys;
   const bars = days.map(k => {
     const n = perDay.get(k), h = n ? Math.max(3, Math.round(n / top * 100)) : 0;
-    return `<div class="vcol" tabindex="0" data-tip="${esc0(dayLabel(k))}: ${plural(n, 'visit')}"><i style="height:${h}%"></i></div>`;
+    return `<div class="vcol" tabindex="0" data-tip="${esc0(B.label(k))}: ${plural(n, 'visit')}"><i style="height:${h}%"></i></div>`;
   }).join('');
+  const per = { day: 'day', week: 'week', month: 'month' }[B.unit];
+  const lastLabel = B.unit === 'day' ? 'Today' : B.unit === 'week' ? 'This week' : 'This month';
   // Whose link brought them: by each device's first link.
   const senders = new Map();
-  const devicesAll = [...new Set(V.map(v => v.device))];
+  const devicesAll = [...new Set(V.map(v => v.device))];   // devices seen in this range
   devicesAll.forEach(d => {
     const from = TRK.firstFrom.get(d) || '';
     const s = senders.get(from) || { devices: 0, visits: 0, joined: 0 };
@@ -471,11 +497,12 @@ function renderVisits(el) {
     return head + `<li class="vrow"><span class="t">${esc0(clock(v.at))}</span><span class="w"><b>${esc0(deviceLabel(v.device))}</b>${v.first ? ' <span class="new">first visit</span>' : ''}
       <small>${esc0([linkLabel(v.from), v.browser || v.kind].filter(Boolean).join(' · '))}</small></span></li>`;
   }).join('');
-  trackerShell(el, !V.length ? `<p class="empty">No visits logged yet. They start the first time someone opens the tree after this update. Your own devices aren't counted.</p>` : `
+  const chips = `<div class="ranges" role="group" aria-label="Show visits from">${RANGES.map(([d, w]) => `<button class="btn${d === visitRange ? ' on' : ''}" data-range="${d}" aria-pressed="${d === visitRange}">${w}</button>`).join('')}</div>`;
+  trackerShell(el, !all.length ? `<p class="empty">No visits logged yet. They start the first time someone opens the tree after this update. Your own devices aren't counted.</p>` : chips + (!V.length ? `<p class="empty">No visits ${esc0(rangeWord)}. Pick a longer range.</p>` : `
     <div class="tiles">${tiles.map(([n, w, sub]) => `<div class="tile"><b>${n}</b><span>${w}</span><small>${sub}</small></div>`).join('')}</div>
-    <section class="tcard"><h2>Visits per day, last 30 days</h2>
-      <div class="vchart" role="img" aria-label="Visits per day for the last 30 days, at most ${max} in a day"><div class="vaxis"><span>${top}</span><span>0</span></div><div class="vbars">${bars}</div></div>
-      <div class="vdates"><span>${esc0(dayLabel(days[0]))}</span><span>Today</span></div>
+    <section class="tcard"><h2>Visits per ${per}, ${esc0(rangeWord.replace(/^in the /, ''))}</h2>
+      <div class="vchart" role="img" aria-label="Visits per ${per} ${esc0(rangeWord)}, at most ${max} in a ${per}"><div class="vaxis"><span>${top}</span><span>0</span></div><div class="vbars">${bars}</div></div>
+      <div class="vdates"><span>${esc0(B.label(days[0]))}</span><span>${lastLabel}</span></div>
       <p class="tip" id="vTip" aria-live="polite"></p></section>
     <section class="tcard"><h2>Whose link brought them</h2>
       <p class="muted">Every link from Send carries the sender. A device counts for whoever first brought it.</p>
@@ -483,7 +510,8 @@ function renderVisits(el) {
     <section class="tcard"><h2>Every visit</h2>
       <p class="muted">A visit is opening the tree. Opening it again within 30 minutes on the same device counts once. Your own devices aren't counted.</p>
       <ul class="vlog">${logRows}</ul>
-      ${log.length > visitShow ? `<button class="btn" id="vMore">Show ${Math.min(40, log.length - visitShow)} more</button>` : ''}</section>`);
+      ${log.length > visitShow ? `<button class="btn" id="vMore">Show ${Math.min(40, log.length - visitShow)} more</button>` : ''}</section>`));
+  el.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { visitRange = +b.dataset.range; visitShow = 40; store.set('roots_visit_range', String(visitRange)); renderVisits(el); });
   const tip = el.querySelector('#vTip');
   el.querySelectorAll('.vcol').forEach(c => {
     const show = () => { tip.textContent = c.dataset.tip; el.querySelectorAll('.vcol.on').forEach(x => x.classList.remove('on')); c.classList.add('on'); };
@@ -663,7 +691,7 @@ if (matchMedia('(hover: hover)').matches) {
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = 'e8e5ef0478';
+  const BUILD = 'e2e37c9eba';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

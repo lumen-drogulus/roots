@@ -148,3 +148,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .clist .chk { flex: 1; min-width: 0; }
 .clist b { font-weight: 500; }
 @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vrow .t { width: 62px; } .vchart { height: 120px; } }
+.ranges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.ranges .btn { height: 32px; padding: 0 12px; font-size: 13.5px; }
+.ranges .btn.on { background: var(--ink); color: var(--card); border-color: var(--ink); }

@@ -136,6 +136,13 @@ async def main():
         check('?notrack keeps the device out for good', len(rows('Visits'))==n)
         await c.close()
 
+        # ---- older visits, as if logged weeks and months ago (Tyler's device and a stranger) ----
+        import datetime
+        dev=rows('Visits')[0]['device']; now=datetime.datetime.now(datetime.timezone.utc)
+        iso=lambda d: (now-datetime.timedelta(days=d)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+        old=[[iso(10),dev,B,'phone','iPhone Safari',''],[iso(45),'D-0000aaaa','','computer','Windows Edge','yes'],[iso(200),'D-0000aaaa','','computer','Windows Edge','']]
+        urllib.request.urlopen(urllib.request.Request(API+'/__append', json.dumps({'tab':'Visits','rows':old}).encode(), {'Content-Type':'application/json'}))
+
         # ---- approvals page: Visits, Activity, Contacts ----
         for name, w in [('desk', 1280), ('phone', 390)]:
             c=await b.new_context(viewport={'width':w,'height':900}, permissions=['clipboard-read','clipboard-write'])
@@ -144,15 +151,32 @@ async def main():
             await pg.goto(f'{SITE}/admin.html?api={API}'); await pg.wait_for_selector('#app:not([hidden])', timeout=20000)
             await pg.click('#tabVisits'); await pg.wait_for_selector('#visits .tile', timeout=15000)
             tiles=await pg.inner_text('#visits .tiles')
-            check(f'{name}: tiles count 3 visits, 3 devices, 2 first-timers', tiles.split()[0]=='3' and '\n3\n' in '\n'+tiles and '2\nfirst-timers' in tiles, tiles)
+            check(f'{name}: tiles count 4 visits (one 10 days ago), 3 devices, 2 first-timers', tiles.split()[0]=='4' and '\n3\n' in '\n'+tiles and '2\nfirst-timers' in tiles, tiles)
             check(f'{name}: 30 bars in the chart', await pg.locator('#visits .vcol').count()==30)
             sender=await pg.inner_text('#visits .ttable')
             check(f'{name}: whose link: Barbara Hale, Jonny Ruzicka, plain link', 'Barbara Hale' in sender and 'Jonny Ruzicka' in sender and 'Plain link' in sender, sender)
             log=await pg.inner_text('#visits .vlog')
             check(f'{name}: log names them, says whose link and device', 'Tyler Isaacs (not confirmed yet)' in log and "Barbara Hale's link" in log and 'iPhone Safari' in log and 'first visit' in log.lower(), log)
             await pg.hover('#visits .vcol:last-child') if name=='desk' else await pg.click('#visits .vcol:last-child')
+            check(f'{name}: today tile counts only today', (await pg.inner_text('#visits .tile:nth-child(4)')).split()[0]=='3')
             check(f'{name}: a bar says its day and count', 'Today: 3 visits' in await pg.inner_text('#vTip'), await pg.inner_text('#vTip'))
             await pg.screenshot(path=SHOT+f'visits_{name}.png', full_page=True)
+            # Ranges: 30 days holds the visit 10 days ago; 90 days the one 45 days ago, by week; All time, by month.
+            t30=await pg.inner_text('#visits .tiles')
+            check(f'{name}: 30 days: 4 visits (today 3, ten days ago 1)', t30.split()[0]=='4', t30)
+            await pg.click('#visits [data-range="7"]'); await pg.wait_for_timeout(150)
+            check(f'{name}: 7 days: 3 visits, 7 daily bars', (await pg.inner_text('#visits .tiles')).split()[0]=='3' and await pg.locator('#visits .vcol').count()==7)
+            await pg.click('#visits [data-range="90"]'); await pg.wait_for_timeout(150)
+            h=await pg.inner_text('#visits .tcard h2')
+            check(f'{name}: 90 days: 5 visits, weekly bars', (await pg.inner_text('#visits .tiles')).split()[0]=='5' and 'per week' in h and 13<=await pg.locator('#visits .vcol').count()<=15, h)
+            await pg.click('#visits [data-range="0"]'); await pg.wait_for_timeout(150)
+            h=await pg.inner_text('#visits .tcard h2'); bars=await pg.locator('#visits .vcol').count()
+            check(f'{name}: All time: 6 visits, monthly bars, since the tracker started', (await pg.inner_text('#visits .tiles')).split()[0]=='6' and 'per month' in h and 'since the tracker started' in h and 7<=bars<=8, (h,bars))
+            check(f'{name}: the log follows the range', 'Windows Edge' in await pg.inner_text('#visits .vlog'))
+            await pg.screenshot(path=SHOT+f'visits_all_{name}.png', full_page=True)
+            await pg.reload(); await pg.wait_for_selector('#app:not([hidden])'); await pg.click('#tabVisits'); await pg.wait_for_selector('#visits .tile')
+            check(f'{name}: the range is remembered on this device', await pg.get_attribute('#visits [data-range="0"]','aria-pressed')=='true')
+            await pg.click('#visits [data-range="30"]'); await pg.wait_for_timeout(150)
             await pg.click('#tabActivity'); await pg.wait_for_selector('#activity .arow', timeout=15000)
             act=await pg.inner_text('#activity')
             check(f'{name}: activity: Linda sent a person and said who she is, waiting; owner hidden', 'Linda Zed (not confirmed yet)' in act and '1 person' in act and 'said who they are' in act and '1 waiting' in act and 'You' not in act.split('Include')[1], act[:600])

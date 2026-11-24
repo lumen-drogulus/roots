@@ -15,6 +15,12 @@ http.createServer((req, res) => {
   };
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/__key') return send(200, t.props.ADMIN_KEY, 'text/plain');   // test-only helper
+  // Test-only: append rows to a tab as they'd sit in the Sheet (old visits for the tracker's ranges).
+  if (url.pathname === '/__append' && req.method === 'POST') {
+    let body = ''; req.on('data', c => { body += c; });
+    req.on('end', () => { const { tab, rows } = JSON.parse(body); const sh = t.sheets[tab]; rows.forEach(r => sh.appendRow(r)); send(200, '{"ok":true}'); });
+    return;
+  }
   if (url.pathname === '/__sheet') return send(200, JSON.stringify(Object.fromEntries(Object.entries(t.sheets).map(([k, v]) => [k, v._data]))));
   if (req.method === 'GET') return send(200, t.env.doGet({ parameter: Object.fromEntries(url.searchParams) }).text);
   if (req.method === 'POST') {
