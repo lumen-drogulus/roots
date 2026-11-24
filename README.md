@@ -19,18 +19,20 @@ Three views (2026-11-22), named in `meta.view`: `public` (anyone: living people'
 
 | action | body | notes |
 |---|---|---|
-| `tree` | `token`, `key?` | Same as GET, keeps the token out of the URL. With the admin key: the owner view |
+| `tree` | `token`, `key?`, `visit?` | Same as GET, keeps the token out of the URL. With the admin key: the owner view. `visit` (`from`, `kind`, `browser`, `first`; since 2026-11-24) logs a page open to the Visits tab, never with the admin key |
 | `submit` | `token`, `display_name?`, `items[]` | Kinds: `person` (with `ref: "new:x"`), `relationship`, `suggestion` (on a person, a link, or since 2026-11-23 a photo's `caption`, `date_taken`, `place`, `kind`), `tag`, `claim`. Refs link items in one batch. All-or-nothing validation |
 | `upload_photo` | `token`, `image` (base64), `mime`, `kind?` (`photo`/`document`), `caption?`, `date_taken?`, `place?`, `source?`, `tags[]` | JPEG, PNG, WebP, GIF, HEIC/HEIF, TIFF or PDF, up to 10 MB. The page shrinks images it can read (1600px photos, 2400px documents) |
 | `own_thumb` | `token`, `id` | A preview of the caller's own pending photo |
 | `withdraw`, `own_edit` | `token`, … | A relative's own pending rows only; `own_edit` also fixes their own pending photo's details |
 | `set_adoption_shown` | `token` or `key`, `person_id`, `shown` | Only the adopted person (approved claim) or the owner. Applies at once |
+| `set_email` | `token`, `email` | The caller's own contact email (empty removes it). Owner only ever sees it; `own.email` returns it to that device |
 | `admin_queue` | `key` | Pending items grouped by submission, with duplicate hints and the living-person flag on photos |
 | `admin_approve` / `admin_reject` | `key`, `items[{kind,id,data?}]` | People are processed before their links, whatever the order sent |
 | `admin_retract` | `key`, `items[]` | Takes back an approval; photos go private again |
 | `admin_edit` | `key`, `kind`, `id`, `data` | |
 | `admin_merge` / `admin_unmerge` | `key`, `keep`, `drop` / `id` | Merges are logged and fully reversible |
 | `admin_tree`, `admin_photo`, `admin_pause`, `admin_set_owner` | `key`, … | |
+| `admin_tracker` | `key` | Visits, contributors with emails, and a who-sent-what log. Read-only, skips the lock |
 
 A request carrying the admin key is approved on arrival, so the owner can seed the tree from the normal page.
 

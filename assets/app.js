@@ -1180,6 +1180,7 @@ function openPerson(id) {
     if (living && !p.pending) body += privacyNote(p);
     else if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
   }
+  body += contactCardHTML(id);
   body += adoptionBox(id);
   const kindWords = { step: 'step-parent', adopted: 'adoptive parent', foster: 'foster parent' };
   const kinLines = [
@@ -1229,6 +1230,7 @@ function openPerson(id) {
   if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);
   wirePhotoSection(id);
   wireAdoptionBox(id);
+  wireContactCard(id);
   const pf = $('#pFindMe'); if (pf) pf.onclick = () => { closePanel(); openIntro(2); };
   document.querySelectorAll('.nudge').forEach(n => {
     const [a, b] = n.dataset.pair.split('>');
@@ -1498,6 +1500,7 @@ function showReview() {
   }).join('') + `<p class="hint">Something wrong, or remember more? Tap Edit. ${ADMIN_KEY ? '' : `You can change it until ${OWNER_NAME} confirms it.`}</p>`;
   box.hidden = !n;
   box.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => reviewEdit(list[+b.dataset.rv]));
+  stayInThanks(!!first.self);
   showPage('thanks');
   $('#thanks').scrollTop = 0;
 }
@@ -1914,7 +1917,10 @@ async function claimMe(id) {
   catch (err) { toast(err.message); return; }
   STATE.viewer = id;
   closePanel();
-  toast(ADMIN_KEY ? "You're set as you." : `Thanks, ${P(id).first}. ${OWNER_NAME} will confirm it's you.`);
+  const thanks = ADMIN_KEY ? "You're set as you." : `Thanks, ${P(id).first}. ${OWNER_NAME} will confirm it's you.`;
+  // Stay in touch (2026-11-24): asked right after they say who they are. The thanks moves into its header, since a
+  // toast on a phone would sit over the email box.
+  if (shouldAskEmail()) openStayPanel(null, thanks); else toast(thanks);
   reload();
 }
 
@@ -1925,7 +1931,9 @@ async function claimMe(id) {
 const VIEW = () => (TREE && TREE.meta && TREE.meta.view) || 'public';
 function privacyNote(p) {
   const v = VIEW(), mine = p.id === STATE.viewer;
-  const box = (t, extra = '') => `<div class="private">${ICON.lock}<span>${t}</span>${extra}</div>`;
+  // The visit line (2026-11-24): on the public view, where the lock box is the main word on privacy, and on your own card.
+  const track = v !== 'owner' && (v === 'public' || mine) ? `<span class="trackline">${TRACK_LINE}</span>` : '';
+  const box = (t, extra = '') => `<div class="private">${ICON.lock}<span>${t}</span>${extra}${track}</div>`;
   if (v === 'owner') return box(`Everyone with the link sees ${esc(p.first || 'their')}'s names, gender and birth year. The birthday, birthplace and story show only to family you've confirmed.`);
   if (v === 'family') return box(mine
     ? `Everyone with the link sees your names, gender and birth year. Your birthday, birthplace and notes show only to family ${OWNER_NAME} has confirmed.`
@@ -1972,7 +1980,7 @@ let pendingReload = false;
 let showAfterSave = null;
 function showPage(id) { $('#' + id).classList.add('on'); }
 function hidePage(id) { $('#' + id).classList.remove('on'); }
-function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; $('#thanksReview').hidden = true; showPage('thanks'); }
+function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; $('#thanksReview').hidden = true; stayInThanks(false); showPage('thanks'); }
 $('#thanksBack').onclick = () => { hidePage('thanks'); if (pendingReload) { pendingReload = false; setTimeout(() => reload(), 150); } };
 $('#thanksSend').onclick = () => { hidePage('thanks'); if (pendingReload) { pendingReload = false; reload(); } openSend(); };
 
@@ -3281,6 +3289,126 @@ stage.addEventListener('pointerdown', () => {
 });
 
 /* =====================================================================
+ * Visits and staying in touch (Jonny, 2026-11-24)
+ * ===================================================================== */
+
+/* Visits. The first tree load of a visit tells the server, for the tracker on the approvals page: whose link it came
+ * from (the ?from= that Send puts in every link), phone or computer, and the browser. A reopening within 30 minutes on
+ * this device is the same visit. Never in owner mode. A device opened once with ?notrack (Claude's live checks) stays
+ * out of the log for good. The Help guide and the lock box say this is happening. */
+if (QS.has('notrack')) store.set('roots_notrack', '1');
+const VISIT_GAP = 30 * 60000;
+const TRACK_LINE = `${OWNER_NAME} can see when the tree is opened, whose link it came from, and whether it's a phone or computer. Nothing else about your device.`;
+function deviceKind() {
+  const ua = navigator.userAgent, ipadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  if (/iPad|Tablet/i.test(ua) || ipadOS || (/Android/.test(ua) && !/Mobile/.test(ua))) return 'tablet';
+  return /Mobi|iPhone|Android/i.test(ua) ? 'phone' : 'computer';
+}
+function browserName() {
+  const ua = navigator.userAgent, ipadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || ipadOS ? 'iPad' : /Android/.test(ua) ? 'Android'
+    : /Windows/.test(ua) ? 'Windows' : /CrOS/.test(ua) ? 'Chromebook' : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '';
+  // Facebook's and Instagram's own browsers mean the link was tapped inside Messenger, Facebook or Instagram.
+  const br = /FBAN|FBAV|FB_IAB/.test(ua) ? 'Facebook' : /Instagram/.test(ua) ? 'Instagram' : /SamsungBrowser/.test(ua) ? 'Samsung Internet'
+    : /Edg\//.test(ua) ? 'Edge' : /FxiOS|Firefox/.test(ua) ? 'Firefox' : /CriOS|Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : '';
+  return [os, br].filter(Boolean).join(' ');
+}
+let visitNote;   // worked out once per page open, so a retried first load still carries it
+function visitInfo() {
+  if (visitNote !== undefined) return visitNote;
+  visitNote = null;
+  if (ADMIN_KEY || store.get('roots_notrack') === '1') return null;
+  const now = Date.now(), last = +(store.get('roots_visit_at') || 0);
+  store.set('roots_visit_at', String(now));
+  if (now - last < VISIT_GAP) return null;
+  // A device that was here before the tracker existed has a saved tree or has seen the intro: not a first visit.
+  const first = !store.get('roots_visited') && !store.get('roots_cache') && store.get('roots_intro_seen') !== '1';
+  store.set('roots_visited', '1');
+  visitNote = { from: QS.get('from') || '', kind: deviceKind(), browser: browserName(), first };
+  return visitNote;
+}
+
+/* Stay in touch. Asked right after a relative says who they are (That's me, or saving themselves), never on
+ * "Which one is you?" itself. Skip means this device doesn't ask again; their own card keeps a quiet way back.
+ * The address goes to the Contributors tab, which only Jonny's approvals page reads. */
+const STAY_TEXT = `Share your email and ${OWNER_NAME} can let you know when the tree has big news, or ask you about something you added. Only Jonny sees it. It's never shown on the tree.`;
+const myEmail = () => (TREE && TREE.own && TREE.own.email) || '';
+const shouldAskEmail = () => !ADMIN_KEY && !myEmail() && store.get('roots_email_skip') !== '1';
+const looksLikeEmail = e => /^[^\s@<>,;:"'()[\]\\]+@[^\s@<>,;:"'()[\]\\]+\.[A-Za-z]{2,}$/.test(e);
+function stayFormHTML(value = '') {
+  return `<div class="stayrow"><input id="stayEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="your@email.com" value="${esc(value)}" aria-label="Your email"></div>
+    <p class="hint warn" id="stayErr" hidden></p>`;
+}
+async function sendEmail(btn, onDone) {
+  const email = $('#stayEmail').value.trim();
+  const err = m => { $('#stayErr').textContent = m; $('#stayErr').hidden = !m; };
+  if (!email) { err('Type your email first, or tap Skip.'); $('#stayEmail').focus(); return; }
+  if (!looksLikeEmail(email)) { err("That doesn't look like an email address. Check it and try again."); $('#stayEmail').focus(); return; }
+  err(''); btn.disabled = true; btn.textContent = 'Saving…';
+  let r;
+  try { r = await api({ action: 'set_email', email }); }
+  catch (e) { btn.disabled = false; btn.textContent = 'Share'; err(e.message); return; }
+  if (TREE) TREE.own = { ...(TREE.own || {}), email: r.email };
+  onDone(r.email);
+}
+// Its own short screen in the side panel (a bottom sheet on phones). after: what to open once it's done or skipped.
+function openStayPanel(after, note) {
+  const had = myEmail();
+  openPanel(`
+    <div class="head"><div><h2>${had ? 'Change your email' : 'Stay in touch?'}</h2>${note ? `<div class="sub">${esc(note)}</div>` : ''}</div>
+      <button class="x" id="pClose" aria-label="Close">${ICON.close}</button></div>
+    <div class="body stay"><p>${STAY_TEXT}</p>${stayFormHTML(had)}</div>
+    <div class="foot"><button class="iconbtn" id="staySkip">${had ? 'Cancel' : 'Skip'}</button><button class="primary" id="stayShare">Share</button></div>`);
+  const leave = () => { if (!had) store.set('roots_email_skip', '1'); closePanel(); if (after) after(); };
+  $('#pClose').onclick = leave;
+  $('#staySkip').onclick = leave;
+  $('#stayShare').onclick = () => sendEmail($('#stayShare'), email => {
+    closePanel(); toast(`Thanks. ${OWNER_NAME} can reach you at ${email}.`); if (after) after();
+  });
+  $('#stayEmail').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#stayShare').click(); } };
+  if (innerWidth > 700) $('#stayEmail').focus();
+}
+// On the thank-you page after a relative saves themselves: the same ask, above "Here's what you sent".
+function stayInThanks(self) {
+  let el = $('#thanksStay');
+  if (!el) { $('#thanksReview').insertAdjacentHTML('beforebegin', '<div class="stay thanksstay" id="thanksStay" hidden></div>'); el = $('#thanksStay'); }
+  el.hidden = !(self && shouldAskEmail());
+  if (el.hidden) { el.innerHTML = ''; return; }
+  el.innerHTML = `<h2>Stay in touch?</h2><p>${STAY_TEXT}</p>${stayFormHTML()}
+    <div class="stayacts"><button class="iconbtn" id="staySkip">Skip</button><button class="primary" id="stayShare">Share</button></div>`;
+  $('#staySkip').onclick = () => { store.set('roots_email_skip', '1'); el.hidden = true; el.innerHTML = ''; };
+  $('#stayShare').onclick = () => sendEmail($('#stayShare'), email => {
+    el.innerHTML = `<p class="staydone">Thanks. ${OWNER_NAME} can reach you at <b>${esc(email)}</b>. You can change it any time from your own card.</p>`;
+  });
+}
+// On the relative's own card: what Jonny has, with Change and Remove, or a quiet offer if they skipped.
+function contactCardHTML(id) {
+  if (ADMIN_KEY || id !== STATE.viewer) return '';
+  const e = myEmail();
+  return e
+    ? `<div class="staycard" id="stayCard"><span>${OWNER_NAME} can reach you at <b>${esc(e)}</b>. Only he sees it.</span><span class="nbtns"><button class="nbtn" id="cChange">Change</button><button class="nbtn" id="cRemove">Remove</button></span></div>`
+    : `<div class="staycard" id="stayCard"><span>Want to hear when the tree has big news? Share your email with ${OWNER_NAME}. Only he sees it.</span><button class="nbtn" id="cShare">Share your email</button></div>`;
+}
+function wireContactCard(id) {
+  const back = () => openPerson(id);
+  if ($('#cShare')) $('#cShare').onclick = () => openStayPanel(back);
+  if ($('#cChange')) $('#cChange').onclick = () => openStayPanel(back);
+  if ($('#cRemove')) $('#cRemove').onclick = () => {
+    const box = $('#stayCard');
+    box.innerHTML = `<span>Remove your email? ${OWNER_NAME} won't be able to reach you through the tree.</span><span class="nbtns"><button class="nbtn yes" id="cRemoveYes">Yes, remove it</button><button class="nbtn" id="cKeep">Keep</button></span>`;
+    $('#cKeep').onclick = back;
+    $('#cRemoveYes').onclick = async () => {
+      box.querySelectorAll('button').forEach(x => { x.disabled = true; });
+      try { await api({ action: 'set_email', email: '' }); }
+      catch (e) { toast(e.message); back(); return; }
+      if (TREE) TREE.own = { ...(TREE.own || {}), email: '' };
+      store.set('roots_email_skip', '1');
+      toast('Removed.'); back();
+    };
+  };
+}
+
+/* =====================================================================
  * Intro (first visit), Guide, "Why I built this"
  * ===================================================================== */
 const INTRO = [
@@ -3305,7 +3433,8 @@ const INTRO = [
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></span><div><b>Not sure what a line means?</b><span>Tap <b>Key</b> at the top for every symbol and line type. Pinch or use + and − at the bottom right to make the tree bigger.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Tap <b>Send</b> at the top. Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.6v.4"/><circle cx="12" cy="17" r=".6" fill="#1D2B24"/></svg></span><div><b>Stuck?</b><span>Tap <b>Help</b> at the top to see this again, or email ${OWNER_NAME} at <a href="mailto:jonathonpr@gmail.com">jonathonpr@gmail.com</a>.</span></div></li>
-    </ul>`,
+    </ul>
+    <p class="ihidden trackhelp">${ICON.lock}<span>No passwords or sign-up. ${TRACK_LINE}</span></p>`,
   () => `
     <h1>Which one is you?</h1>
     <p>Find yourself so the tree knows where you fit and opens on you.</p>
@@ -3447,7 +3576,8 @@ function applyTree(tree) {
 let loadedOnce = false;
 async function reload(opts = {}) {
   let tree;
-  try { tree = await api({ action: 'tree' }); }
+  const visit = loadedOnce ? null : visitInfo();
+  try { tree = await api({ action: 'tree', ...(visit ? { visit } : {}) }); }
   catch (err) { if (!loadedOnce) showLoadError(err.message); else toast(err.message); return; }
   const firstTime = !loadedOnce;
   loadedOnce = true;
@@ -3536,7 +3666,7 @@ window.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || savin
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '2ca6c13a0f';
+  const BUILD = 'e8e5ef0478';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

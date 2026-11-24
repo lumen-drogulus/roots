@@ -129,13 +129,15 @@ $('#gateForm').onsubmit = async e => {
 $('#btnLock').onclick = () => { store.del('roots_admin_key'); store.del('roots_cache'); location.reload(); };
 
 /* ---------- tabs ---------- */
+// Waiting, Everyone, and since 2026-11-24 the tracker: Visits, Activity, Contacts.
+const TABS = { queue: 'tabQueue', people: 'tabPeople', visits: 'tabVisits', activity: 'tabActivity', contacts: 'tabContacts' };
 function tab(which) {
-  $('#tabQueue').setAttribute('aria-selected', which === 'queue'); $('#tabPeople').setAttribute('aria-selected', which === 'people');
-  $('#queue').hidden = which !== 'queue'; $('#people').hidden = which !== 'people';
-  if (which === 'people') loadPeople(); else loadQueue();
+  Object.entries(TABS).forEach(([panel, btn]) => { $('#' + btn).setAttribute('aria-selected', which === panel); $('#' + panel).hidden = which !== panel; });
+  if (which === 'people') loadPeople();
+  else if (which === 'queue') loadQueue();
+  else showTracker(which);
 }
-$('#tabQueue').onclick = () => tab('queue');
-$('#tabPeople').onclick = () => tab('people');
+Object.entries(TABS).forEach(([panel, btn]) => { $('#' + btn).onclick = () => tab(panel); });
 
 /* ---------- pause ---------- */
 function setPaused(p) { const b = $('#btnPause'); b.setAttribute('aria-pressed', p); b.textContent = p ? 'Adding is paused: resume' : 'Pause adding'; }
@@ -363,6 +365,226 @@ function showLinks(row, p) {
   });
 }
 
+/* =====================================================================
+ * Tracker (Jonny, 2026-11-24): Visits, Activity and Contacts, from one admin_tracker call.
+ * Visits are logged by the tree page (never in owner mode). Activity is built from what every row already records
+ * (who sent it, when, and what became of it). Contacts are the emails relatives chose to share.
+ * ===================================================================== */
+let TRK = null, trkAt = 0;
+async function loadTracker(force) {
+  if (TRK && !force && Date.now() - trkAt < 60000) return TRK;
+  TRK = await api('admin_tracker'); trkAt = Date.now();
+  indexTracker(TRK);
+  return TRK;
+}
+const dayKey = d => { const x = new Date(d); return isNaN(x) ? '' : `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+const dayLabel = k => { const [y, m, d] = k.split('-').map(Number); const x = new Date(y, m - 1, d);
+  const today = dayKey(Date.now()), yest = dayKey(Date.now() - 864e5);
+  return k === today ? 'Today' : k === yest ? 'Yesterday' : x.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...(y !== new Date().getFullYear() ? { year: 'numeric' } : {}) }); };
+const clock = d => new Date(d).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + 's'}`;
+// Contributors keyed every useful way, owner's devices marked, unknown devices given steady names (Visitor 1, 2, …).
+function indexTracker(t) {
+  t.byId = new Map(t.contributors.map(c => [c.id, c]));
+  t.byDevice = new Map(t.contributors.filter(c => c.device).map(c => [c.device, c]));
+  t.visits = t.visits.map(([at, device, from, kind, browser, first]) => ({ at, device, from, kind, browser, first: first === 'yes' }))
+    .filter(v => !isNaN(new Date(v.at)))
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+  const own = c => c && t.owner_person_id && c.person_id === t.owner_person_id;
+  t.visits = t.visits.filter(v => !own(t.byDevice.get(v.device)));
+  // Each device keeps whoever first brought it, even if later visits come from a bookmark.
+  t.firstFrom = new Map(); t.visitorNo = new Map(); let n = 0;
+  t.visits.forEach(v => {
+    if (v.from && !t.firstFrom.has(v.device)) t.firstFrom.set(v.device, v.from);
+    if (!t.byDevice.has(v.device) && !t.visitorNo.has(v.device)) t.visitorNo.set(v.device, ++n);
+  });
+}
+function contributorLabel(c) {
+  if (!c) return 'Someone';
+  if (TRK.owner_person_id && c.person_id === TRK.owner_person_id) return 'You';
+  const n = c.person_id && TRK.names[c.person_id];
+  if (n) return n + (c.status === 'approved' ? '' : ' (not confirmed yet)');
+  return c.display_name || 'A relative who hasn\'t said who they are';
+}
+function deviceLabel(device) {
+  const c = TRK.byDevice.get(device);
+  if (c && (c.person_id || c.display_name)) return contributorLabel(c);
+  return 'Visitor ' + (TRK.visitorNo.get(device) || '?');
+}
+const linkLabel = from => from ? `${TRK.names[from] || 'someone no longer on the tree'}'s link` : 'plain link';
+function trackerShell(el, html) {
+  el.innerHTML = `<div class="trkbar"><span class="muted">Updated ${when(TRK.generated_at)}</span><button class="btn quiet" data-refresh>Refresh</button></div>` + html;
+  el.querySelector('[data-refresh]').onclick = async e => {
+    try { await working(e.target, 'Refreshing…', () => loadTracker(true)); } catch (err) { toast(err.message); return; }
+    renderTracker(el.id);
+  };
+}
+async function showTracker(which) {
+  const el = $('#' + which);
+  if (!TRK) el.innerHTML = '<p class="empty">Loading…</p>';
+  try { await loadTracker(); }
+  catch (err) { el.innerHTML = ''; el.appendChild(retryBox(err.message, () => showTracker(which))); return; }
+  renderTracker(which);
+}
+function renderTracker(which) { ({ visits: renderVisits, activity: renderActivity, contacts: renderContacts })[which]($('#' + which)); }
+
+/* ---------- Visits ---------- */
+let visitShow = 40;
+function renderVisits(el) {
+  const V = TRK.visits, now = Date.now(), d30 = now - 30 * 864e5;
+  const recent = V.filter(v => new Date(v.at) >= d30);
+  const today = dayKey(now);
+  const devs = new Set(recent.map(v => v.device));
+  const newDevs = new Set(recent.filter(v => v.first).map(v => v.device));
+  const tiles = [
+    [recent.length, 'visits', 'in the last 30 days'],
+    [devs.size, devs.size === 1 ? 'device' : 'devices', 'phones and computers, last 30 days'],
+    [newDevs.size, 'first-timers', 'opened the tree for the first time'],
+    [V.filter(v => dayKey(v.at) === today).length, 'today', 'visits so far today']
+  ];
+  // Visits per day, last 30 days: one series, so one color and no legend; the heading names it.
+  const days = []; for (let i = 29; i >= 0; i--) days.push(dayKey(now - i * 864e5));
+  const perDay = new Map(days.map(k => [k, 0]));
+  recent.forEach(v => { const k = dayKey(v.at); if (perDay.has(k)) perDay.set(k, perDay.get(k) + 1); });
+  const max = Math.max(1, ...perDay.values());
+  const top = max <= 4 ? max : Math.ceil(max / 5) * 5;
+  const bars = days.map(k => {
+    const n = perDay.get(k), h = n ? Math.max(3, Math.round(n / top * 100)) : 0;
+    return `<div class="vcol" tabindex="0" data-tip="${esc0(dayLabel(k))}: ${plural(n, 'visit')}"><i style="height:${h}%"></i></div>`;
+  }).join('');
+  // Whose link brought them: by each device's first link.
+  const senders = new Map();
+  const devicesAll = [...new Set(V.map(v => v.device))];
+  devicesAll.forEach(d => {
+    const from = TRK.firstFrom.get(d) || '';
+    const s = senders.get(from) || { devices: 0, visits: 0, joined: 0 };
+    s.devices++; s.visits += V.filter(v => v.device === d).length;
+    const c = TRK.byDevice.get(d); if (c && c.person_id) s.joined++;
+    senders.set(from, s);
+  });
+  const senderRows = [...senders.entries()].sort((a, b) => b[1].devices - a[1].devices || (a[0] ? 0 : 1) - (b[0] ? 0 : 1)).map(([from, s]) =>
+    `<tr><td>${esc0(from ? TRK.names[from] || 'Someone no longer on the tree' : 'Plain link (no sender)')}</td><td class="num">${s.devices}</td><td class="num">${s.visits}</td><td class="num">${s.joined}</td></tr>`).join('');
+  const log = [...V].reverse();
+  let lastDay = '';
+  const logRows = log.slice(0, visitShow).map(v => {
+    const k = dayKey(v.at), head = k !== lastDay ? `<li class="dayhead">${esc0(dayLabel(k))}</li>` : ''; lastDay = k;
+    return head + `<li class="vrow"><span class="t">${esc0(clock(v.at))}</span><span class="w"><b>${esc0(deviceLabel(v.device))}</b>${v.first ? ' <span class="new">first visit</span>' : ''}
+      <small>${esc0([linkLabel(v.from), v.browser || v.kind].filter(Boolean).join(' · '))}</small></span></li>`;
+  }).join('');
+  trackerShell(el, !V.length ? `<p class="empty">No visits logged yet. They start the first time someone opens the tree after this update. Your own devices aren't counted.</p>` : `
+    <div class="tiles">${tiles.map(([n, w, sub]) => `<div class="tile"><b>${n}</b><span>${w}</span><small>${sub}</small></div>`).join('')}</div>
+    <section class="tcard"><h2>Visits per day, last 30 days</h2>
+      <div class="vchart" role="img" aria-label="Visits per day for the last 30 days, at most ${max} in a day"><div class="vaxis"><span>${top}</span><span>0</span></div><div class="vbars">${bars}</div></div>
+      <div class="vdates"><span>${esc0(dayLabel(days[0]))}</span><span>Today</span></div>
+      <p class="tip" id="vTip" aria-live="polite"></p></section>
+    <section class="tcard"><h2>Whose link brought them</h2>
+      <p class="muted">Every link from Send carries the sender. A device counts for whoever first brought it.</p>
+      <table class="ttable"><thead><tr><th>Sender</th><th class="num">Devices</th><th class="num">Visits</th><th class="num">Said who they are</th></tr></thead><tbody>${senderRows}</tbody></table></section>
+    <section class="tcard"><h2>Every visit</h2>
+      <p class="muted">A visit is opening the tree. Opening it again within 30 minutes on the same device counts once. Your own devices aren't counted.</p>
+      <ul class="vlog">${logRows}</ul>
+      ${log.length > visitShow ? `<button class="btn" id="vMore">Show ${Math.min(40, log.length - visitShow)} more</button>` : ''}</section>`);
+  const tip = el.querySelector('#vTip');
+  el.querySelectorAll('.vcol').forEach(c => {
+    const show = () => { tip.textContent = c.dataset.tip; el.querySelectorAll('.vcol.on').forEach(x => x.classList.remove('on')); c.classList.add('on'); };
+    c.onmouseenter = show; c.onfocus = show; c.onclick = show;
+  });
+  const more = el.querySelector('#vMore'); if (more) more.onclick = () => { visitShow += 40; renderVisits(el); };
+}
+
+/* ---------- Activity ---------- */
+const ACT_WORDS = { People: ['person', 'people'], Relationships: ['link', 'links'], Suggestions: ['change', 'changes'],
+  Photos: ['photo or document', 'photos and documents'], PhotoTags: ['photo tag', 'photo tags'] };
+const STATUS_WORDS = [['approved', 'approved'], ['pending', 'waiting'], ['rejected', 'declined'], ['withdrawn', 'taken back'], ['merged', 'merged']];
+function renderActivity(el) {
+  const mine = $('#actMine') ? $('#actMine').checked : false;
+  const groups = new Map();
+  TRK.activity.forEach(([by, at, table, status]) => {
+    if (!at) return;
+    const c = TRK.byId.get(by);
+    const isOwner = by && c && TRK.owner_person_id && c.person_id === TRK.owner_person_id;
+    if (isOwner && !mine) return;
+    const k = dayKey(at) + '|' + (by || '');
+    const g = groups.get(k) || { day: dayKey(at), by, last: at, kinds: {}, status: {} };
+    if (at > g.last) g.last = at;
+    g.kinds[table] = (g.kinds[table] || 0) + 1;
+    if (table !== 'Claims') g.status[status] = (g.status[status] || 0) + 1;
+    groups.set(k, g);
+  });
+  const list = [...groups.values()].sort((a, b) => b.day.localeCompare(a.day) || b.last.localeCompare(a.last));
+  let lastDay = '';
+  const rows = list.map(g => {
+    const head = g.day !== lastDay ? `<li class="dayhead">${esc0(dayLabel(g.day))}</li>` : ''; lastDay = g.day;
+    const what = Object.keys(ACT_WORDS).filter(t => g.kinds[t]).map(t => `${g.kinds[t]} ${ACT_WORDS[t][g.kinds[t] === 1 ? 0 : 1]}`);
+    const sent = what.length ? 'sent ' + what.join(', ') : '';
+    const claim = g.kinds.Claims ? 'said who they are' : '';
+    const st = STATUS_WORDS.filter(([s]) => g.status[s]).map(([s, w]) => `<span class="st ${s}">${g.status[s]} ${w}</span>`).join('');
+    return head + `<li class="arow"><b>${esc0(contributorLabel(TRK.byId.get(g.by)))}</b> <span>${esc0([sent, claim].filter(Boolean).join('; '))}.</span>${st ? `<span class="sts">${st}</span>` : ''}</li>`;
+  }).join('');
+  trackerShell(el, `
+    <section class="tcard"><h2>Who added what</h2>
+      <p class="muted">One line per relative per day, counted from the tree itself, back to the start. Each line says what became of it.</p>
+      <label class="chk"><input type="checkbox" id="actMine"${mine ? ' checked' : ''}> Include what you added yourself</label>
+      ${rows ? `<ul class="vlog">${rows}</ul>` : '<p class="empty">Nothing from relatives yet.</p>'}</section>`);
+  el.querySelector('#actMine').onchange = () => renderActivity(el);
+}
+
+/* ---------- Contacts ---------- */
+function contactList() {
+  // One row per person (someone on two phones is one row); a device that never said who it is stands alone.
+  const rows = new Map();
+  TRK.contributors.filter(c => c.email).forEach(c => {
+    if (TRK.owner_person_id && c.person_id === TRK.owner_person_id) return;
+    const k = c.person_id || c.id;
+    const r = rows.get(k) || { key: k, name: contributorLabel(c), status: c.status, emails: [], since: c.email_given_at };
+    if (!r.emails.includes(c.email)) r.emails.push(c.email);
+    if (c.email_given_at < r.since) r.since = c.email_given_at;
+    if (c.status === 'approved') { r.status = 'approved'; r.name = contributorLabel(c); }
+    rows.set(k, r);
+  });
+  return [...rows.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+// One person: plain To. More than one: BCC, so relatives don't get each other's addresses.
+// Addresses stay readable (some mail apps choke on %40); anything unusual is escaped.
+const mailEnc = e => String(e).replace(/[^A-Za-z0-9@._+-]/g, c => encodeURIComponent(c));
+const contactHref = to => to.length === 1 ? 'mailto:' + mailEnc(to[0]) : 'mailto:?bcc=' + to.map(mailEnc).join(',');
+function renderContacts(el) {
+  const list = contactList();
+  trackerShell(el, `
+    <section class="tcard"><h2>Contacts</h2>
+      <p class="muted">Relatives who shared an email so you can send news or ask about something they added. They can change or remove it from their own card. Group emails go out as BCC, so nobody sees anyone else's address.</p>
+      ${!list.length ? '<p class="empty">Nobody has shared an email yet. The tree asks right after someone says who they are.</p>' : `
+      <div class="cbar"><label class="chk"><input type="checkbox" id="cAll" checked> Everyone (${list.length})</label><span class="spacer"></span>
+        <button class="btn primary" id="cWrite">Write email</button><button class="btn" id="cCopy">Copy addresses</button></div>
+      <p class="err" id="cErr" hidden></p>
+      <ul class="clist">${list.map((r, i) => `<li><label class="chk"><input type="checkbox" data-c="${i}" checked>
+        <span><b>${esc0(r.name)}</b><small>${r.emails.map(esc0).join(', ')} · shared ${esc0(when(r.since))}</small></span></label>
+        <a class="btn quiet" href="${esc0(contactHref(r.emails))}">Email</a></li>`).join('')}</ul>`}
+    </section>`);
+  if (!list.length) return;
+  const boxes = () => [...el.querySelectorAll('[data-c]')];
+  const picked = () => boxes().filter(b => b.checked).flatMap(b => list[+b.dataset.c].emails);
+  const sync = () => { const n = boxes().filter(b => b.checked).length; $('#cAll').checked = n === list.length; $('#cAll').indeterminate = n > 0 && n < list.length;
+    $('#cWrite').textContent = n === list.length ? 'Write email to everyone' : n ? `Write email to ${n}` : 'Write email'; };
+  $('#cAll').onchange = () => { boxes().forEach(b => { b.checked = $('#cAll').checked; }); sync(); };
+  boxes().forEach(b => { b.onchange = sync; });
+  const err = m => { $('#cErr').textContent = m; $('#cErr').hidden = !m; };
+  $('#cWrite').onclick = () => {
+    const to = picked(); err('');
+    if (!to.length) { err('Tick at least one person.'); return; }
+    const href = contactHref(to);
+    if (href.length > 1900) { err('Too many addresses for your mail app to take from a link. Tap Copy addresses and paste them into BCC.'); return; }
+    location.href = href;
+  };
+  $('#cCopy').onclick = async () => {
+    const to = picked(); err('');
+    if (!to.length) { err('Tick at least one person.'); return; }
+    try { await navigator.clipboard.writeText(to.join(', ')); toast(`${plural(to.length, 'address', 'addresses')} copied. Paste them into BCC.`); }
+    catch (e) { err('Couldn\'t copy. Here they are: ' + to.join(', ')); }
+  };
+  sync();
+}
+
 /* ---------- start ---------- */
 // Forget the saved key only when the server rejects it. A busy or slow server keeps it, and Unlock retries.
 if (KEY) {
@@ -441,7 +663,7 @@ if (matchMedia('(hover: hover)').matches) {
  * is never cached; when it's newer, refresh this page's files once and reload. Never mid-form: a busy page waits
  * for its next check. One reload per version, so a slow CDN can't cause a loop. ---- */
 (function () {
-  const BUILD = '2ca6c13a0f';
+  const BUILD = 'e8e5ef0478';
   let last = 0;
   async function check() {
     if (Date.now() - last < 60000) return;

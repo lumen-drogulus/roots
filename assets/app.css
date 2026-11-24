@@ -591,3 +591,21 @@ body.photomode .builtby { display: none; }
 .vedit .field label { display: block; font-size: 14px; color: var(--ink-soft); margin-bottom: 4px; }
 .vpend .nbtn { padding: 5px 12px; font-size: 13.5px; }
 .pgedit { padding: 7px 14px; font-size: 14px; }
+
+/* Stay in touch and the visit line (2026-11-24) */
+.stay p { margin: 0 0 12px; line-height: 1.5; }
+.stay .stayrow input { width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; padding: 11px 12px; border-radius: 10px; border: 1px solid rgba(29,43,36,.25); background: #fff; color: #1D2B24; }
+.stay .stayrow input:focus { outline: 2px solid #A9822F; outline-offset: 1px; }
+.stay .hint.warn { margin-top: 8px; }
+.thanksstay { margin: 18px 0 6px; padding: 16px; border-radius: 14px; background: #FFFDF9; border: 1px solid #E5CF9C; text-align: left; }
+.thanksstay h2 { margin: 0 0 6px; font-size: 19px; }
+.thanksstay p { font-size: 15px; color: var(--ink-soft); }
+.thanksstay .stayacts { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+.thanksstay .staydone { margin: 0; color: #1D2B24; }
+.staycard { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px; border-radius: 12px; background: #F1EEE6; font-size: 14px; line-height: 1.45; color: var(--ink-soft); }
+.staycard > span:first-child { flex: 1 1 200px; overflow-wrap: anywhere; }
+.staycard b { color: #1D2B24; font-weight: 500; }
+.staycard .nbtns { display: flex; gap: 8px; }
+.staycard .nbtn { padding: 7px 14px; font-size: 14px; }
+.private .trackline { flex: 1 1 100%; margin-left: 28px; font-size: 13px; opacity: .85; }
+.trackhelp { margin-top: 14px; }

@@ -23,7 +23,8 @@ const INTRO = [
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h3M4 12h3M4 17h3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></span><div><b>Not sure what a line means?</b><span>Tap <b>Key</b> at the top for every symbol and line type. Pinch or use + and − at the bottom right to make the tree bigger.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7-7-1z"/></svg></span><div><b>Send it on.</b><span>Tap <b>Send</b> at the top. Every relative who adds a branch fills in a gap nobody else could.</span></div></li>
       <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#1D2B24" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.6v.4"/><circle cx="12" cy="17" r=".6" fill="#1D2B24"/></svg></span><div><b>Stuck?</b><span>Tap <b>Help</b> at the top to see this again, or email ${OWNER_NAME} at <a href="mailto:jonathonpr@gmail.com">jonathonpr@gmail.com</a>.</span></div></li>
-    </ul>`,
+    </ul>
+    <p class="ihidden trackhelp">${ICON.lock}<span>No passwords or sign-up. ${TRACK_LINE}</span></p>`,
   () => `
     <h1>Which one is you?</h1>
     <p>Find yourself so the tree knows where you fit and opens on you.</p>
@@ -165,7 +166,8 @@ function applyTree(tree) {
 let loadedOnce = false;
 async function reload(opts = {}) {
   let tree;
-  try { tree = await api({ action: 'tree' }); }
+  const visit = loadedOnce ? null : visitInfo();
+  try { tree = await api({ action: 'tree', ...(visit ? { visit } : {}) }); }
   catch (err) { if (!loadedOnce) showLoadError(err.message); else toast(err.message); return; }
   const firstTime = !loadedOnce;
   loadedOnce = true;

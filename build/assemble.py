@@ -425,7 +425,7 @@ engine = rep(engine, "  if (path === 'PD') return w('Stepson', 'Stepdaughter', '
 ui = open('build/app-ui.js').read()
 assert "STATE.all" not in ui
 ui = ui.replace("changes = Object.keys(now).filter(k => now[k] !== was[k] && !(k === 'living' && now[k] === 'unknown' && was[k] !== 'unknown' && false))", "changes = Object.keys(now).filter(k => now[k] !== was[k])")
-app = open('build/app-data.js').read() + '\n' + open('build/app-info.js').read() + '\n' + engine + '\n' + ui + '\n' + open('build/app-photos.js').read() + '\n' + open('build/app-levels.js').read() + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-related.js').read() + '\n' + open('build/app-boot.js').read()
+app = open('build/app-data.js').read() + '\n' + open('build/app-info.js').read() + '\n' + engine + '\n' + ui + '\n' + open('build/app-photos.js').read() + '\n' + open('build/app-levels.js').read() + '\n' + keyjs + '\n\n' + open('build/app-wheel.js').read() + '\n' + open('build/app-related.js').read() + '\n' + open('build/app-contact.js').read() + '\n' + open('build/app-boot.js').read()
 assert 'STATE.all' not in app, 'STATE.all left over: ' + app[app.index('STATE.all') - 200:app.index('STATE.all') + 50]
 # Busy = a form or card is open: the freshness check waits rather than reload under someone's typing.
 app += "\nwindow.ROOTS_BUSY = () => panel.classList.contains('on') || !!formDirty || saving;\n"

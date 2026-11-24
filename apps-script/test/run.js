@@ -636,6 +636,65 @@ test('re-editing someone replaces your own earlier unconfirmed changes in one ca
   assert.strictEqual(mine().length, 0);
 });
 
+test('visits: logged with the tree load, without the token, once per device per stretch, never for the owner', () => {
+  const { t, key, ids } = setup();
+  const visit = { from: ids['new:mom'], kind: 'phone', browser: 'iPhone Safari', first: true };
+  t.post({ action: 'tree', token: TOK_LINDA, visit });
+  t.post({ action: 'tree', token: TOK_LINDA, visit });                          // same device again within 25 minutes
+  t.post({ action: 'tree', token: TOK_STRANGER, visit: { kind: 'computer', browser: '=IMPORTXML("x")', from: 'P-evil' } });
+  t.post({ action: 'tree', token: TOK_JONNY, key, visit });                     // owner mode: never logged
+  t.post({ action: 'tree', token: 'short', visit });                            // not a real device token
+  t.post({ action: 'tree', token: TOK_LINDA });                                 // a reload that isn't a new visit
+  const rows = t.sheets.Visits._data;
+  assert.strictEqual(JSON.stringify(rows[0]), JSON.stringify(['at', 'device', 'from', 'kind', 'browser', 'first']));
+  assert.strictEqual(rows.length, 3, JSON.stringify(rows));
+  assert.ok(!JSON.stringify(rows).includes(TOK_LINDA) && !JSON.stringify(rows).includes(TOK_STRANGER));
+  assert.ok(/^D-[0-9a-f]{8}$/.test(rows[1][1]));
+  assert.strictEqual(JSON.stringify(rows[1].slice(2)), JSON.stringify([ids['new:mom'], 'phone', 'iPhone Safari', 'yes']));
+  assert.strictEqual(JSON.stringify(rows[2].slice(2)), JSON.stringify(['', 'computer', 'IMPORTXMLx', '']));   // typed-looking text and bad ids dropped
+  // The tracker ties the visit to Linda's device once she has a contributor row.
+  t.post({ action: 'submit', token: TOK_LINDA, display_name: 'Linda', items: [{ kind: 'claim', person: ids['new:kid'] }] });
+  const tr = t.post({ action: 'admin_tracker', key });
+  assert.strictEqual(tr.ok, true, JSON.stringify(tr));
+  assert.strictEqual(tr.visits.length, 2);
+  const linda = tr.contributors.find(c => c.display_name === 'Linda');
+  assert.strictEqual(linda.device, rows[1][1]);
+  assert.ok(!('token' in linda));
+  assert.strictEqual(tr.names[ids['new:mom']], 'Carol Ruzicka');
+  assert.ok(tr.activity.some(a => a[0] === linda.id && a[2] === 'Claims' && a[3] === 'pending'));
+  assert.ok(tr.activity.some(a => a[2] === 'People' && a[3] === 'approved'));
+  assert.strictEqual(t.post({ action: 'admin_tracker', key: 'wrong' }).ok, false);
+  assert.strictEqual(t.post({ action: 'admin_tracker', token: TOK_LINDA }).ok, false);
+  assert.deepStrictEqual(t.env._errors, []);
+});
+
+test('contact email: own row only, checked, removable, owner-only, never in any view', () => {
+  const { t, key, ids } = setup();
+  assert.strictEqual(t.post({ action: 'set_email', token: TOK_LINDA, email: 'not an email' }).ok, false);
+  assert.strictEqual(t.post({ action: 'set_email', token: TOK_LINDA, email: 'a@b' }).ok, false);
+  const r = t.post({ action: 'set_email', token: TOK_LINDA, email: '  Linda.Novak+tree@Example.com ' });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.strictEqual(r.email, 'linda.novak+tree@example.com');
+  // Her own tree answer carries it back to her device, so her card can show it.
+  assert.strictEqual(t.post({ action: 'tree', token: TOK_LINDA }).own.email, 'linda.novak+tree@example.com');
+  // Nobody else's view has it, in any tier.
+  t.post({ action: 'submit', token: TOK_STRANGER, items: [{ kind: 'claim', person: ids['new:kid'] }] });
+  const claim = t.post({ action: 'admin_queue', key }).batches.flatMap(b => b.items).find(i => i.kind === 'claim');
+  t.post({ action: 'admin_approve', key, items: [{ kind: 'claim', id: claim.id }] });
+  for (const body of [{ action: 'tree' }, { action: 'tree', token: TOK_STRANGER }, { action: 'tree', key, token: TOK_JONNY }]) {
+    assert.ok(!JSON.stringify(t.post(body)).includes('linda.novak'), JSON.stringify(body));
+  }
+  const tr = t.post({ action: 'admin_tracker', key });
+  assert.ok(tr.contributors.some(c => c.email === 'linda.novak+tree@example.com' && c.email_given_at));
+  // Removing it clears both cells.
+  assert.strictEqual(t.post({ action: 'set_email', token: TOK_LINDA, email: '' }).ok, true);
+  const row = t.post({ action: 'admin_tracker', key }).contributors.find(c => c.display_name === '' && c.email === '' && c.email_given_at === '');
+  assert.ok(row);
+  // A formula-looking address is stored as text.
+  assert.strictEqual(t.post({ action: 'set_email', token: TOK_STRANGER, email: '=cmd@evil.com' }).ok, true);
+  assert.strictEqual(t.formulaWrites.length, 0);
+});
+
 test('no unexpected server errors were logged', () => {
   // each test builds a fresh env; this one just checks a full happy path is clean
   const { t } = setup();

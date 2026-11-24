@@ -143,6 +143,7 @@ function openPerson(id) {
     if (living && !p.pending) body += privacyNote(p);
     else if (!facts.length && !p.notes && !p.pending) body += `<p class="story muted">Nothing written about ${esc(p.first)} yet. If you remember something, tap Edit and add it.</p>`;
   }
+  body += contactCardHTML(id);
   body += adoptionBox(id);
   const kindWords = { step: 'step-parent', adopted: 'adoptive parent', foster: 'foster parent' };
   const kinLines = [
@@ -192,6 +193,7 @@ function openPerson(id) {
   if ($('#pMe')) $('#pMe').onclick = () => claimMe(id);
   wirePhotoSection(id);
   wireAdoptionBox(id);
+  wireContactCard(id);
   const pf = $('#pFindMe'); if (pf) pf.onclick = () => { closePanel(); openIntro(2); };
   document.querySelectorAll('.nudge').forEach(n => {
     const [a, b] = n.dataset.pair.split('>');
@@ -461,6 +463,7 @@ function showReview() {
   }).join('') + `<p class="hint">Something wrong, or remember more? Tap Edit. ${ADMIN_KEY ? '' : `You can change it until ${OWNER_NAME} confirms it.`}</p>`;
   box.hidden = !n;
   box.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => reviewEdit(list[+b.dataset.rv]));
+  stayInThanks(!!first.self);
   showPage('thanks');
   $('#thanks').scrollTop = 0;
 }
@@ -877,7 +880,10 @@ async function claimMe(id) {
   catch (err) { toast(err.message); return; }
   STATE.viewer = id;
   closePanel();
-  toast(ADMIN_KEY ? "You're set as you." : `Thanks, ${P(id).first}. ${OWNER_NAME} will confirm it's you.`);
+  const thanks = ADMIN_KEY ? "You're set as you." : `Thanks, ${P(id).first}. ${OWNER_NAME} will confirm it's you.`;
+  // Stay in touch (2026-11-24): asked right after they say who they are. The thanks moves into its header, since a
+  // toast on a phone would sit over the email box.
+  if (shouldAskEmail()) openStayPanel(null, thanks); else toast(thanks);
   reload();
 }
 
@@ -888,7 +894,9 @@ async function claimMe(id) {
 const VIEW = () => (TREE && TREE.meta && TREE.meta.view) || 'public';
 function privacyNote(p) {
   const v = VIEW(), mine = p.id === STATE.viewer;
-  const box = (t, extra = '') => `<div class="private">${ICON.lock}<span>${t}</span>${extra}</div>`;
+  // The visit line (2026-11-24): on the public view, where the lock box is the main word on privacy, and on your own card.
+  const track = v !== 'owner' && (v === 'public' || mine) ? `<span class="trackline">${TRACK_LINE}</span>` : '';
+  const box = (t, extra = '') => `<div class="private">${ICON.lock}<span>${t}</span>${extra}${track}</div>`;
   if (v === 'owner') return box(`Everyone with the link sees ${esc(p.first || 'their')}'s names, gender and birth year. The birthday, birthplace and story show only to family you've confirmed.`);
   if (v === 'family') return box(mine
     ? `Everyone with the link sees your names, gender and birth year. Your birthday, birthplace and notes show only to family ${OWNER_NAME} has confirmed.`
@@ -935,7 +943,7 @@ let pendingReload = false;
 let showAfterSave = null;
 function showPage(id) { $('#' + id).classList.add('on'); }
 function hidePage(id) { $('#' + id).classList.remove('on'); }
-function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; $('#thanksReview').hidden = true; showPage('thanks'); }
+function showThanks(title, body) { $('#thanksTitle').innerHTML = title; $('#thanksBody').textContent = body; $('#thanksReview').hidden = true; stayInThanks(false); showPage('thanks'); }
 $('#thanksBack').onclick = () => { hidePage('thanks'); if (pendingReload) { pendingReload = false; setTimeout(() => reload(), 150); } };
 $('#thanksSend').onclick = () => { hidePage('thanks'); if (pendingReload) { pendingReload = false; reload(); } openSend(); };
 

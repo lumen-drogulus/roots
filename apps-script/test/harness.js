@@ -22,6 +22,10 @@ function makeEnv() {
         return { getValues: () => data.slice(0, last).map(r => r.slice()) };
       },
       getMaxRows: () => maxRows,
+      appendRow(row) {
+        if (data.length === 1 && !data[0].length) data[0] = row.slice(); else data.push(row.slice());
+        return sheet;
+      },
       insertRowsAfter(_after, n) { maxRows += n; },
       getRange(row, col, nr = 1, nc = 1) {
         if (row + nr - 1 > maxRows) throw new Error('Range outside sheet: row ' + (row + nr - 1) + ' > ' + maxRows);
@@ -54,6 +58,7 @@ function makeEnv() {
   }
 
   const props = {};
+  const cache = new Map();
   const files = {};
   const mails = [];
   let fileSeq = 0;
@@ -103,7 +108,8 @@ function makeEnv() {
     console: { log() {}, error: (...a) => env._errors.push(a.join(' ')) },
     _errors: [],
     SpreadsheetApp: {
-      getActiveSpreadsheet: () => ({ getSheetByName: n => sheets[n] || null, getId: () => 'mainSheet', getSheets: () => Object.values(sheets) }),
+      getActiveSpreadsheet: () => ({ getSheetByName: n => sheets[n] || null, getId: () => 'mainSheet', getSheets: () => Object.values(sheets),
+        insertSheet(n) { if (sheets[n]) throw new Error('A sheet with the name "' + n + '" already exists.'); return (sheets[n] = makeSheet(n, [])); } }),
       create: newSpreadsheet
     },
     PropertiesService: {
@@ -113,10 +119,14 @@ function makeEnv() {
         deleteProperty: k => { delete props[k]; }
       })
     },
+    CacheService: { getScriptCache: () => ({ get: k => (cache.has(k) && cache.get(k).until > Date.now() ? cache.get(k).v : null),
+      put: (k, v, secs) => { cache.set(k, { v: String(v), until: Date.now() + secs * 1000 }); } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Utilities: {
       getUuid: () => crypto.randomUUID(),
       formatDate: (d, _tz, _fmt) => d.toISOString().slice(0, 10),
+      DigestAlgorithm: { SHA_256: 'sha256' },
+      computeDigest: (_alg, s) => Array.from(crypto.createHash('sha256').update(s).digest()).map(b => (b > 127 ? b - 256 : b)),
       base64Decode: s => Array.from(Buffer.from(s, 'base64')),
       base64Encode: b => Buffer.from(b).toString('base64'),
       newBlob: blob
@@ -160,7 +170,7 @@ function makeEnv() {
   for (const name of Object.keys(env.SCHEMA)) sheets[name] = makeSheet(name, env.SCHEMA[name]);
 
   return {
-    env, sheets, props, files, mails, formulaWrites, drive,
+    env, sheets, props, files, mails, formulaWrites, drive, cache,
     get(params) { return JSON.parse(env.doGet({ parameter: params }).text); },
     post(body) { return JSON.parse(env.doPost({ postData: { contents: JSON.stringify(body) } }).text); },
     run(fnName) { return env[fnName](); }

@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400&display=swap">
-<link rel="stylesheet" href="assets/admin.css?v=2ca6c13a0f">
+<link rel="stylesheet" href="assets/admin.css?v=e8e5ef0478">
 </head>
 <body>
 <header class="bar">
@@ -40,14 +40,20 @@
     <nav class="tabs" role="tablist">
       <button role="tab" id="tabQueue" aria-selected="true">Waiting <span id="qCount" class="count"></span></button>
       <button role="tab" id="tabPeople" aria-selected="false">Everyone</button>
+      <button role="tab" id="tabVisits" aria-selected="false">Visits</button>
+      <button role="tab" id="tabActivity" aria-selected="false">Activity</button>
+      <button role="tab" id="tabContacts" aria-selected="false">Contacts</button>
     </nav>
     <div id="queue" role="tabpanel" aria-labelledby="tabQueue"></div>
     <div id="people" role="tabpanel" aria-labelledby="tabPeople" hidden></div>
+    <div id="visits" role="tabpanel" aria-labelledby="tabVisits" hidden></div>
+    <div id="activity" role="tabpanel" aria-labelledby="tabActivity" hidden></div>
+    <div id="contacts" role="tabpanel" aria-labelledby="tabContacts" hidden></div>
   </section>
 </main>
 <div class="toast" id="toast" role="status"></div>
 
-<script src="config.js?v=2ca6c13a0f"></script>
-<script src="assets/admin.js?v=2ca6c13a0f"></script>
+<script src="config.js?v=e8e5ef0478"></script>
+<script src="assets/admin.js?v=e8e5ef0478"></script>
 </body>
 </html>

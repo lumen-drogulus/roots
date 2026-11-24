@@ -24,7 +24,8 @@ var CONFIG = {
   MAX_PHOTO_BYTES: 10 * 1024 * 1024,   // photos arrive shrunk (well under 2 MB); PDFs and HEIC/TIFF originals use the room
   MAX_TEXT: 300,
   MAX_NOTES: 5000,
-  REJECTED_LOOKBACK_DAYS: 30
+  REJECTED_LOOKBACK_DAYS: 30,
+  MAX_VISITS_PER_HOUR: 600         // a flood guard on the visit log; a real family never comes close
 };
 
 var SCHEMA = {
@@ -38,8 +39,14 @@ var SCHEMA = {
   Photos: ['id', 'status', 'drive_file_id', 'caption', 'date_taken', 'place',
     'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at', 'kind', 'mime'],
   PhotoTags: ['id', 'status', 'photo_id', 'person_id', 'source', 'submitted_by', 'submitted_at', 'batch_id', 'reviewed_at'],
-  Contributors: ['id', 'status', 'token', 'person_id', 'display_name', 'first_seen', 'last_seen', 'reviewed_at']
+  Contributors: ['id', 'status', 'token', 'person_id', 'display_name', 'first_seen', 'last_seen', 'reviewed_at',
+    'email', 'email_given_at']   // email: shared by the relative for Jonny's updates (2026-11-24). Owner only, never in a view
 };
+
+// Visits (2026-11-24): one row per page open, for the tracker on the approvals page. Kept out of SCHEMA on purpose,
+// so a tree load never reads a tab that only grows. Created on the first visit if it isn't there.
+var VISITS_TAB = 'Visits';
+var VISIT_COLS = ['at', 'device', 'from', 'kind', 'browser', 'first'];
 
 var ID_PREFIX = { People: 'P', Relationships: 'R', Suggestions: 'S', Photos: 'F', PhotoTags: 'T', Contributors: 'C' };
 var KIND_TABLE = { person: 'People', relationship: 'Relationships', suggestion: 'Suggestions', photo: 'Photos', tag: 'PhotoTags', claim: 'Contributors' };
@@ -85,10 +92,15 @@ function doPost(e) {
     var action = body.action || '';
 
     var isAdmin = !!body.key && checkAdminKey_(body.key);
-    if (action === 'tree') return publicTree_(loadDb_(), body.token || '', isAdmin);
+    if (action === 'tree') {
+      if (body.visit && !isAdmin) logVisit_(body.token, body.visit);
+      return publicTree_(loadDb_(), body.token || '', isAdmin);
+    }
     if (action === 'own_thumb') return ownThumb_(loadDb_(), body.token || '', body.id);
 
     if (action.indexOf('admin_') === 0 && !isAdmin) throw userError_('Admin key not accepted.');
+    // Read-only, so it skips the lock: the tracker never waits behind (or holds up) a save.
+    if (action === 'admin_tracker') return adminTracker_(loadDb_());
 
     return withLock_(function () {
       var db = loadDb_();
@@ -99,6 +111,7 @@ function doPost(e) {
         case 'withdraw': result = withdraw_(db, body); break;
         case 'own_edit': result = ownEdit_(db, body); break;
         case 'set_adoption_shown': result = setAdoptionShown_(db, body, isAdmin); break;
+        case 'set_email': result = setEmail_(db, body); break;
         case 'admin_tree': result = adminTree_(db); break;
         case 'admin_queue': result = adminQueue_(db); break;
         case 'admin_approve': result = adminDecide_(db, body.items || [], 'approved'); break;
@@ -542,6 +555,7 @@ function ownView_(db, me) {
     }),
     tags: db.PhotoTags.rows.filter(pending).map(function (t) { return { id: t.id, photo_id: t.photo_id, person_id: t.person_id }; }),
     adoption: ownAdoption_(db, me),
+    email: me.email || '',
     rejected: rejected
   };
 }
@@ -1091,6 +1105,110 @@ function unpublishPhotoFile_(fileId) {
 /* =========================================================================
  * Admin
  * ========================================================================= */
+
+/* =========================================================================
+ * Visits and contact emails (2026-11-24)
+ * ========================================================================= */
+
+/** "D-" and 8 hex of the device token's SHA-256: the Visits tab can tie visits to a contributor without holding the token. */
+function deviceId_(token) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token));
+  var hex = '';
+  for (var i = 0; i < 4; i++) hex += ('0' + ((bytes[i] + 256) % 256).toString(16)).slice(-2);
+  return 'D-' + hex;
+}
+
+function visitsSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(VISITS_TAB);
+  if (!sh) { sh = ss.insertSheet(VISITS_TAB); sh.appendRow(VISIT_COLS); }
+  return sh;
+}
+
+/**
+ * Logs one page open. The page sends it with its first tree load of a visit (a reopening within 30 minutes on the same
+ * device isn't a new visit), never in owner mode. Only fixed words and ids are kept: nothing a visitor types reaches
+ * this tab. Appended outside the script lock, so a visit never waits behind a save; a failure is logged and the tree
+ * loads anyway.
+ */
+function logVisit_(token, v) {
+  try {
+    if (!validToken_(token) || !v || typeof v !== 'object') return;
+    var device = deviceId_(token);
+    var cache = CacheService.getScriptCache();
+    if (cache.get('visit:' + device)) return;
+    var hourKey = 'visits:' + new Date().toISOString().slice(0, 13);
+    var n = Number(cache.get(hourKey) || 0);
+    if (n >= CONFIG.MAX_VISITS_PER_HOUR) return;
+    cache.put(hourKey, String(n + 1), 3700);
+    cache.put('visit:' + device, '1', 25 * 60);
+    var from = typeof v.from === 'string' && /^P-[0-9a-f]{8}$/.test(v.from) ? v.from : '';
+    var kind = ['phone', 'tablet', 'computer'].indexOf(v.kind) >= 0 ? v.kind : '';
+    var browser = String(v.browser || '').replace(/[^A-Za-z ]/g, '').slice(0, 30).trim();
+    visitsSheet_().appendRow([nowIso_(), device, from, kind, browser, v.first === true ? 'yes' : '']);
+  } catch (err) {
+    console.error('visit not logged: ' + err);
+  }
+}
+
+var EMAIL_RE = /^[^\s@<>,;:"'()\[\]\\]+@[^\s@<>,;:"'()\[\]\\]+\.[A-Za-z]{2,}$/;
+
+/** A relative shares (or changes, or removes with "") the email Jonny can reach them at. Their own row only. */
+function setEmail_(db, body) {
+  var email = String(body.email || '').trim().toLowerCase();
+  if (email && (email.length > 254 || !EMAIL_RE.test(email))) {
+    throw userError_("That doesn't look like an email address. Check it and try again.");
+  }
+  var me = getOrCreateContributor_(db, body.token, '');
+  db.Contributors.set(me, 'email', email);
+  db.Contributors.set(me, 'email_given_at', email ? nowIso_() : '');
+  return { email: email };
+}
+
+function shortName_(p) {
+  if (!p) return '';
+  var name = [p.first_name, currentSurname_(p)].filter(String).join(' ');
+  return name || (isTrue_(p.is_placeholder) ? 'Unknown' : '(no name)');
+}
+
+/**
+ * Everything the approvals page's tracker shows, in one call: visits, every contributor (with their email), and a
+ * compact log of who sent what when. The page does the grouping and counting.
+ */
+function adminTracker_(db) {
+  var names = {};
+  db.People.rows.forEach(function (p) { names[p.id] = shortName_(resolvePerson_(db, p.id) || p); });
+  var contributors = db.Contributors.rows.map(function (c) {
+    return { id: c.id, device: c.token ? deviceId_(c.token) : '', person_id: c.person_id, status: c.status,
+      display_name: c.display_name, first_seen: c.first_seen, last_seen: c.last_seen,
+      email: c.email, email_given_at: c.email_given_at };
+  });
+  var activity = [];
+  OWN_TABLES.forEach(function (name) {
+    db[name].rows.forEach(function (r) {
+      activity.push([r.submitted_by, r.submitted_at, name, r.status, r.reviewed_at]);
+    });
+  });
+  db.Contributors.rows.forEach(function (c) {
+    if (c.person_id) activity.push([c.id, c.first_seen, 'Claims', c.status, c.reviewed_at]);
+  });
+  var visits = [];
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(VISITS_TAB);
+  if (sh) {
+    var values = sh.getDataRange().getValues();
+    var head = (values[0] || []).map(String);
+    var col = {};
+    VISIT_COLS.forEach(function (c) { col[c] = head.indexOf(c); });
+    for (var i = 1; i < values.length; i++) {
+      var row = values[i];
+      if (col.at < 0 || !row[col.at]) continue;
+      visits.push(VISIT_COLS.map(function (c) { return col[c] < 0 ? '' : readCell_(row[col[c]]); }));
+    }
+  }
+  var props = PropertiesService.getScriptProperties();
+  return { names: names, contributors: contributors, activity: activity, visits: visits,
+    owner_person_id: props.getProperty('OWNER_PERSON_ID') || '', generated_at: nowIso_() };
+}
 
 function checkAdminKey_(key) {
   var real = PropertiesService.getScriptProperties().getProperty('ADMIN_KEY') || '';
